@@ -43,6 +43,9 @@ class CustomRequester:
         if response.status_code != expected_status and response.status_code not in expected_status:
             raise ValueError(f"Unexpected status code: {response.status_code}. Expected: {expected_status}")
 
+        if "Content-Type" in response.headers:
+            assert response.headers["Content-Type"] == "application/json; charset=utf-8", "Неверный Content-Type"
+
         return response
 
     def _update_session_headers(self, **kwargs):

@@ -76,6 +76,32 @@ def session():
 
 
 @pytest.fixture(scope="session")
+def admin_session():
+    """
+    Фикстура для создания HTTP-сессии с авторизацией администратора.
+    Логинимся один раз, сохраняем токен в сессию.
+    """
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    # Логинимся как админ
+    login_data = {
+        "email": login_data_list[0],
+        "password": login_data_list[1]
+    }
+    response = session.post(f"{AUTH_URL}/login", json=login_data)
+    assert response.status_code == 200
+    token = response.json().get("accessToken")
+    assert token is not None
+
+    session.headers.update({"Authorization": f"Bearer {token}"})
+
+    yield session
+
+    session.close()
+
+
+@pytest.fixture(scope="session")
 def api_manager(session):
     """
     Фикстура для создания экземпляра ApiManager.
@@ -84,6 +110,14 @@ def api_manager(session):
     :return: Экземпляр ApiManager для управления API-классами.
     """
     return ApiManager(session)
+
+
+@pytest.fixture(scope="session")
+def api_manager_admin(admin_session):
+    """
+    Экземпляр ApiManager с уже авторизованной сессией (админ).
+    """
+    return ApiManager(admin_session)
 
 
 # фикстуры для auth:
@@ -128,28 +162,24 @@ def get_user_id(api_manager):
     response = api_manager.auth_api.login_user(login_data).json()
     user_id = response["user"]["id"]
 
-    yield user_id
-
-    api_manager.clear_token()
+    return user_id
 
 
 @pytest.fixture(scope="function")
-def create_user(auth_session):
+def create_user(auth_session, register_data):
     """
     Фикстура для создания пользователя (обычного, не админа) через админскую сессию.
     Генерирует уникальные email, fullName и пароль, создаёт пользователя через POST /user.
 
+    :param register_data: Данные для регистрации из фикстуры.
     :param auth_session: Админская сессия.
     :return: Словарь с ключами id, email, full_name созданного пользователя.
     """
-    email = faker_en.email()
-    full_name = faker_ru.name()
-    password = "Test123456@"
 
     user_data = {
-        "email": email,
-        "fullName": full_name,
-        "password": password,
+        "email": register_data["email"],
+        "fullName": register_data["fullName"],
+        "password": register_data["password"],
         "verified": True,
         "banned": False
     }
@@ -161,8 +191,8 @@ def create_user(auth_session):
 
     yield {
         "id": user_id,
-        "email": email,
-        "full_name": full_name
+        "email": register_data["email"],
+        "full_name": register_data["fullName"]
     }
 
     # Чистим после теста
@@ -195,50 +225,143 @@ def register_data():
 # фикстуры для films:
 
 @pytest.fixture(scope="function")
-def create_film_with_review(api_manager, film_data, review_data):
+def create_film_with_review(api_manager_admin, film_data, review_data, get_user_id):
     """
     Фикстура для создания фильма с одним отзывом.
     Аутентифицируется как админ, создаёт фильм, затем добавляет к нему отзыв.
 
-    :param api_manager: Экземпляр ApiManager.
+    :param get_user_id: Получение идентификатора юзера из админского ApiManager.
+    :param api_manager_admin: Экземпляр админского ApiManager.
     :param film_data: Данные для создания фильма.
     :param review_data: Данные для создания отзыва.
     :return: ID созданного фильма.
     """
-    api_manager.authenticate(login_data_list)
-    create_movie = api_manager.films_api.create_movie(film_data)
+    create_movie = api_manager_admin.films_api.create_movie(film_data)
     movie_id = create_movie.json()["id"]
 
-    create_movie_reviews = api_manager.films_api.create_review(movie_id, review_data)
-    assert create_movie_reviews.status_code == 201, "Ошибка при создании отзыва к фильму"
-    # БАГ: в Swagger ожидается 200, но API возвращает 201.
+    create_review = api_manager_admin.films_api.create_review(movie_id, review_data)
+
+    create_data = create_review.json()
+    required_fields = ["userId", "rating", "text", "createdAt", "user"]
+    for field in required_fields:
+        assert field in create_data, f"У отзыва отсутствует поле {field}"
+
+    assert isinstance(create_data["userId"], str)
+    assert isinstance(create_data["rating"], int)
+    assert isinstance(create_data["text"], str)
+    assert isinstance(create_data["user"], dict)
+    assert "fullName" in create_data["user"]
+
+    assert create_data["rating"] == review_data["rating"]
+    assert create_data["text"] == review_data["text"]
+    assert 1 <= create_data["rating"] <= 5
+    assert create_data["userId"] == get_user_id
 
     yield movie_id
 
-    api_manager.authenticate(login_data_list)
-    api_manager.films_api.delete_movie(movie_id)
-    api_manager.clear_token()
+    api_manager_admin.films_api.delete_movie(movie_id)
 
 
 @pytest.fixture(scope="function")  # переделано под ApiManager
-def create_film_id(api_manager, film_data):
+def create_film_response(api_manager_admin, film_data):
     """
     Фикстура для создания фильма и возврата его ID.
     Аутентифицируется как админ, создаёт фильм, возвращает ID, а после теста удаляет фильм.
 
-    :param api_manager: Экземпляр ApiManager.
+    :param api_manager_admin: Экземпляр админского ApiManager.
     :param film_data: Данные для создания фильма.
     :return: ID созданного фильма.
     """
-    api_manager.authenticate(login_data_list)
-    create_movie = api_manager.films_api.create_movie(film_data)
-    movie_id = create_movie.json()["id"]
+    create_movie = api_manager_admin.films_api.create_movie(film_data)
+    create_data = create_movie.json()
+
+    # Проверяем структуру ответа на создание
+    required_fields = ["id", "name", "price", "description", "imageUrl",
+                       "location", "published", "genreId", "genre", "createdAt", "rating"]
+    for field in required_fields:
+        assert field in create_data, f"Отсутствует поле {field}"
+
+    # Проверяем типы в ответе на создание
+    assert isinstance(create_data["id"], int)
+    assert isinstance(create_data["name"], str)
+    assert isinstance(create_data["price"], int)
+    assert isinstance(create_data["published"], bool)
+    assert isinstance(create_data["genreId"], int)
+    assert isinstance(create_data["genre"], dict)
+    assert "name" in create_data["genre"]
+
+    movie_id = create_data["id"]
+
+    yield create_data
+
+    api_manager_admin.films_api.delete_movie(movie_id)
+
+
+@pytest.fixture(scope="function")  # переделано под ApiManager
+def create_film_id(api_manager_admin, film_data):
+    """
+    Фикстура для создания фильма и возврата его ID.
+    Аутентифицируется как админ, создаёт фильм, возвращает ID, а после теста удаляет фильм.
+
+    :param api_manager_admin: Экземпляр админского ApiManager.
+    :param film_data: Данные для создания фильма.
+    :return: ID созданного фильма.
+    """
+    create_movie = api_manager_admin.films_api.create_movie(film_data)
+    create_data = create_movie.json()
+
+    # Проверяем структуру ответа на создание
+    required_fields = ["id", "name", "price", "description", "imageUrl",
+                       "location", "published", "genreId", "genre", "createdAt", "rating"]
+    for field in required_fields:
+        assert field in create_data, f"Отсутствует поле {field}"
+
+    # Проверяем типы в ответе на создание
+    assert isinstance(create_data["id"], int)
+    assert isinstance(create_data["name"], str)
+    assert isinstance(create_data["price"], int)
+    assert isinstance(create_data["published"], bool)
+    assert isinstance(create_data["genreId"], int)
+    assert isinstance(create_data["genre"], dict)
+    assert "name" in create_data["genre"]
+
+    movie_id = create_data["id"]
 
     yield movie_id
 
-    api_manager.authenticate(login_data_list)
-    api_manager.films_api.delete_movie(movie_id)
-    api_manager.clear_token()
+    api_manager_admin.films_api.delete_movie(movie_id)
+
+
+@pytest.fixture(scope="function")
+def create_genre_id(api_manager_admin, genre_data):
+    """
+    Фикстура для создания жанра и возврата его ID.
+    Аутентифицируется как админ, создаёт жанр, проверяет структуру ответа,
+    возвращает ID жанра, а после теста удаляет жанр.
+
+    :param api_manager_admin: Экземпляр админского ApiManager.
+    :param genre_data: Данные для создания жанра.
+    :return: ID созданного жанра.
+    """
+    create_genre = api_manager_admin.films_api.create_genres(genre_data)
+    data = create_genre.json()
+    required_fields = ["id", "name"]
+    for field in required_fields:
+        assert field in data, f"У ответа отсутствует поле {field}"
+
+    # Проверка типов
+    assert isinstance(data["id"], int), "id должен быть числом"
+    assert isinstance(data["name"], str), "name должен быть строкой"
+
+    # Проверка значений
+    assert data["name"] == genre_data["name"], "name не совпадает"
+    assert data["id"] > 0, "id должен быть больше 0"
+
+    genre_id = data["id"]
+
+    yield genre_id
+
+    api_manager_admin.films_api.delete_genre(genre_id)
 
 
 @pytest.fixture(scope="function")

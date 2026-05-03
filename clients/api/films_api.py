@@ -10,6 +10,9 @@ class FilmsAPI(CustomRequester):
     def __init__(self, session):
         super().__init__(session=session, base_url="https://api.dev-cinescope.coconutqa.ru/")
         # - При инициализации получает сессию и базовый URL API.
+        self.movies_endpoint = "/movies"
+        self.reviews_endpoint = "/reviews"
+        self.genres_endpoint = "/genres"
 
     # ========== методы для /movies ==========
 
@@ -23,7 +26,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="GET",
-            endpoint="/movies",
+            endpoint=self.movies_endpoint,
             params=billboard_params,
             expected_status=expected_status
         )
@@ -38,7 +41,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="POST",
-            endpoint="/movies",
+            endpoint=self.movies_endpoint,
             data=film_data,
             expected_status=expected_status
         )
@@ -53,7 +56,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="GET",
-            endpoint=f"/movies/{movie_id}",
+            endpoint=f"{self.movies_endpoint}/{movie_id}",
             expected_status=expected_status
         )
 
@@ -67,7 +70,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="DELETE",
-            endpoint=f"/movies/{movie_id}",
+            endpoint=f"{self.movies_endpoint}/{movie_id}",
             expected_status=expected_status
         )
 
@@ -82,7 +85,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="PATCH",
-            endpoint=f"/movies/{movie_id}",
+            endpoint=f"{self.movies_endpoint}/{movie_id}",
             data=film_data_patch,
             expected_status=expected_status
         )
@@ -92,6 +95,7 @@ class FilmsAPI(CustomRequester):
     def create_review(self, movie_id, review_data, expected_status=201):
         """
         Создание отзыва к фильму.
+        БАГ: в Swagger ожидается 200, но API возвращает 201.
 
         :param movie_id: Идентификатор фильма (число).
         :param review_data: Словарь с данными отзыва (rating, text).
@@ -100,7 +104,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="POST",
-            endpoint=f"/movies/{movie_id}/reviews",
+            endpoint=f"{self.movies_endpoint}/{movie_id}{self.reviews_endpoint}",
             data=review_data,
             expected_status=expected_status
         )
@@ -115,7 +119,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="GET",
-            endpoint=f"/movies/{movie_id}/reviews",
+            endpoint=f"{self.movies_endpoint}/{movie_id}{self.reviews_endpoint}",
             expected_status=expected_status
         )
 
@@ -130,7 +134,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="PUT",
-            endpoint=f"/movies/{movie_id}/reviews",
+            endpoint=f"{self.movies_endpoint}/{movie_id}{self.reviews_endpoint}",
             data=edit_data,
             expected_status=expected_status
         )
@@ -145,7 +149,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="DELETE",
-            endpoint=f"/movies/{movie_id}/reviews",
+            endpoint=f"{self.movies_endpoint}/{movie_id}{self.reviews_endpoint}",
             expected_status=expected_status
         )
 
@@ -160,7 +164,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="PATCH",
-            endpoint=f"/movies/{movie_id}/reviews/hide/{user_id}",
+            endpoint=f"{self.movies_endpoint}/{movie_id}{self.reviews_endpoint}/hide/{user_id}",
             expected_status=expected_status
         )
 
@@ -175,7 +179,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="PATCH",
-            endpoint=f"/movies/{movie_id}/reviews/show/{user_id}",
+            endpoint=f"{self.movies_endpoint}/{movie_id}{self.reviews_endpoint}/show/{user_id}",
             expected_status=expected_status
         )
 
@@ -190,7 +194,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="GET",
-            endpoint="/genres",
+            endpoint=self.genres_endpoint,
             expected_status=expected_status
         )
 
@@ -204,7 +208,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="GET",
-            endpoint=f"/genres/{genre_id}",
+            endpoint=f"{self.genres_endpoint}/{genre_id}",
             expected_status=expected_status
         )
 
@@ -218,7 +222,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="POST",
-            endpoint="/genres",
+            endpoint=self.genres_endpoint,
             data=genre_data,
             expected_status=expected_status
         )
@@ -233,7 +237,7 @@ class FilmsAPI(CustomRequester):
         """
         return self.send_request(
             method="DELETE",
-            endpoint=f"/genres/{genre_id}",
+            endpoint=f"{self.genres_endpoint}/{genre_id}",
             expected_status=expected_status
         )
 
