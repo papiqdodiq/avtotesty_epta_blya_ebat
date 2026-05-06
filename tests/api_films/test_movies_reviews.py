@@ -240,6 +240,16 @@ class TestPositiveMoviesReviews:
 
         assert review_found is True, "Отзыв удалился после скрытия (не должен был)"
 
+    def test_hide_review_twice(self, api_manager_admin, create_film_with_review, get_user_id):
+        """Позитив: повторное скрытие уже скрытого отзыва, идемпотентность."""
+        movie_id = create_film_with_review
+
+        # Первое скрытие
+        api_manager_admin.films_api.hide_review(movie_id, get_user_id)
+
+        # Второе скрытие
+        api_manager_admin.films_api.hide_review(movie_id, get_user_id, expected_status=200)
+
     def test_show_review(self, api_manager_admin, create_film_with_review, get_user_id):
         """Позитив: показ скрытого отзыва к фильму.
         Проверяем:
@@ -296,6 +306,19 @@ class TestPositiveMoviesReviews:
                 break
 
         assert review_found is True, "Отзыв удалился после показа (не должен был)"
+
+    def test_show_review_twice(self, api_manager_admin, create_film_with_review, get_user_id):
+        """Позитив: повторный показ уже показанного отзыва, идемпотентность."""
+        movie_id = create_film_with_review
+
+        # Сначала скрываем, чтобы потом показать
+        api_manager_admin.films_api.hide_review(movie_id, get_user_id)
+
+        # Первый показ
+        api_manager_admin.films_api.show_review(movie_id, get_user_id)
+
+        # Второй показ
+        api_manager_admin.films_api.show_review(movie_id, get_user_id, expected_status=200)
 
 
 class TestNegativeMoviesReviews:
@@ -409,7 +432,7 @@ class TestNegativeMoviesReviews:
         data = {"rating": 5}
         api_manager_admin.films_api.create_review(movie_id, data, expected_status=400)
 
-    @pytest.mark.skip(reason="БАГ: при отправке лишних полей сервер возвращает 404 вместо 201 или 400")
+    @pytest.mark.skip(reason="БАГ: при отправке лишних полей сервер возвращает 404 вместо 400")
     def test_create_review_extra_field(self, api_manager_admin, create_film_id):
         """Негатив: создание отзыва с лишними полями"""
         movie_id = create_film_id
@@ -421,7 +444,7 @@ class TestNegativeMoviesReviews:
             "anotherExtra": 12345
         }
 
-        api_manager_admin.films_api.create_review(movie_id, review_data_with_extra, expected_status=[201, 400])
+        api_manager_admin.films_api.create_review(movie_id, review_data_with_extra, expected_status=400)
 
     # ========== РЕДАКТИРОВАНИЕ ОТЗЫВА (негатив) ==========
     def test_edit_review_without_token(self, api_manager, create_film_with_review):
@@ -503,7 +526,7 @@ class TestNegativeMoviesReviews:
         edit_data = {"rating": 5}
         api_manager_admin.films_api.put_review(movie_id, edit_data, expected_status=400)
 
-    @pytest.mark.skip(reason="БАГ: при отправке лишних полей сервер возвращает 404 вместо 200 или 400")
+    @pytest.mark.skip(reason="БАГ: при отправке лишних полей сервер возвращает 404 вместо 400")
     def test_edit_review_extra_field(self, api_manager_admin, create_film_with_review):
         """Негатив: редактирование отзыва с лишними полями"""
         movie_id = create_film_with_review
@@ -515,7 +538,7 @@ class TestNegativeMoviesReviews:
             "anotherExtra": 12345
         }
 
-        api_manager_admin.films_api.put_review(movie_id, edit_data_with_extra, expected_status=[200, 400])
+        api_manager_admin.films_api.put_review(movie_id, edit_data_with_extra, expected_status=400)
 
     # ========== УДАЛЕНИЕ ОТЗЫВА (негатив) ==========
     # Параметр userId в Swagger — либо ошибка документации, либо пережиток прошлого.
@@ -596,16 +619,6 @@ class TestNegativeMoviesReviews:
         invalid_user_id = "not_a_uuid"
         api_manager_admin.films_api.hide_review(movie_id, invalid_user_id, expected_status=404)
 
-    def test_hide_review_twice(self, api_manager_admin, create_film_with_review, get_user_id):
-        """Негатив: повторное скрытие уже скрытого отзыва"""
-        movie_id = create_film_with_review
-
-        # Первое скрытие
-        api_manager_admin.films_api.hide_review(movie_id, get_user_id)
-
-        # Второе скрытие
-        api_manager_admin.films_api.hide_review(movie_id, get_user_id, expected_status=[200, 404])
-
     def test_hide_review_no_review(self, api_manager_admin, create_film_id, get_user_id):
         """Негатив: скрытие отзыва у фильма, у которого нет отзыва"""
         movie_id = create_film_id
@@ -647,19 +660,6 @@ class TestNegativeMoviesReviews:
         movie_id = create_film_with_review
         invalid_user_id = "not_a_uuid"
         api_manager_admin.films_api.show_review(movie_id, invalid_user_id, expected_status=404)
-
-    def test_show_review_twice(self, api_manager_admin, create_film_with_review, get_user_id):
-        """Негатив: повторный показ уже показанного отзыва"""
-        movie_id = create_film_with_review
-
-        # Сначала скрываем, чтобы потом показать
-        api_manager_admin.films_api.hide_review(movie_id, get_user_id)
-
-        # Первый показ
-        api_manager_admin.films_api.show_review(movie_id, get_user_id)
-
-        # Второй показ
-        api_manager_admin.films_api.show_review(movie_id, get_user_id, expected_status=[200, 404])
 
     def test_show_review_no_review(self, api_manager_admin, create_film_id, get_user_id):
         """Негатив: показ отзыва у фильма, у которого нет отзыва"""

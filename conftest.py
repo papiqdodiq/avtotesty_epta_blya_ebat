@@ -5,6 +5,8 @@ from faker import Faker
 from constants import HEADERS, LOGIN_DATA, login_data_list, AUTH_URL, MOVIES_URL, CURRENT_USER_ID, REGISTER_ENDPOINT
 from custom_requester.custom_requester import CustomRequester
 from utils.data_generator import DataGenerator
+from utils.validators import assert_valid_uuid, assert_valid_iso_datetime, assert_datetime_in_range
+from datetime import datetime, timezone, timedelta
 from clients.api_manager import ApiManager
 
 faker_ru = Faker('ru_RU')
@@ -160,6 +162,10 @@ def get_user_id(api_manager):
     }
 
     response = api_manager.auth_api.login_user(login_data).json()
+
+    # Проверка формата UUID
+    assert_valid_uuid(response["user"]["id"])
+
     user_id = response["user"]["id"]
 
     return user_id
@@ -186,6 +192,9 @@ def create_user(auth_session, register_data):
 
     response = auth_session.post(f"{AUTH_URL}/user", json=user_data)
     assert response.status_code == 201, f"Ошибка при создании пользователя: {response.text}"
+
+    # Проверка формата UUID
+    assert_valid_uuid(response.json()["id"])
 
     user_id = response.json()["id"]
 
@@ -225,21 +234,24 @@ def register_data():
 # фикстуры для films:
 
 @pytest.fixture(scope="function")
-def create_film_with_review(api_manager_admin, film_data, review_data, get_user_id):
+def create_film_with_review(api_manager_admin, create_film_response, review_data, get_user_id):
     """
     Фикстура для создания фильма с одним отзывом.
     Аутентифицируется как админ, создаёт фильм, затем добавляет к нему отзыв.
 
     :param get_user_id: Получение идентификатора юзера из админского ApiManager.
     :param api_manager_admin: Экземпляр админского ApiManager.
-    :param film_data: Данные для создания фильма.
+    :param create_film_response: Фикстура для создания фильма.
     :param review_data: Данные для создания отзыва.
     :return: ID созданного фильма.
     """
-    create_movie = api_manager_admin.films_api.create_movie(film_data)
-    movie_id = create_movie.json()["id"]
 
+    movie_id = create_film_response.json()["id"]
+
+    before_request = datetime.now(timezone.utc) - timedelta(seconds=5) # я так делаю, потому что серверное время
+    # в один момент начинает от времени на моем ноуте, хз почему
     create_review = api_manager_admin.films_api.create_review(movie_id, review_data)
+    after_request = datetime.now(timezone.utc) + timedelta(seconds=10)
 
     create_data = create_review.json()
     required_fields = ["userId", "rating", "text", "createdAt", "user"]
@@ -252,14 +264,16 @@ def create_film_with_review(api_manager_admin, film_data, review_data, get_user_
     assert isinstance(create_data["user"], dict)
     assert "fullName" in create_data["user"]
 
+    # Проверяем формат createdAt через чекеры
+    assert_valid_iso_datetime(create_data["createdAt"])
+    assert_datetime_in_range(create_data["createdAt"], before_request, after_request)
+
     assert create_data["rating"] == review_data["rating"]
     assert create_data["text"] == review_data["text"]
     assert 1 <= create_data["rating"] <= 5
     assert create_data["userId"] == get_user_id
 
     yield movie_id
-
-    api_manager_admin.films_api.delete_movie(movie_id)
 
 
 @pytest.fixture(scope="function")  # переделано под ApiManager
@@ -272,7 +286,11 @@ def create_film_response(api_manager_admin, film_data):
     :param film_data: Данные для создания фильма.
     :return: ID созданного фильма.
     """
+    before_request = datetime.now(timezone.utc) - timedelta(seconds=5) # я так делаю, потому что серверное время
+    # в один момент начинает от времени на моем ноуте, хз почему
     create_movie = api_manager_admin.films_api.create_movie(film_data)
+    after_request = datetime.now(timezone.utc) + timedelta(seconds=10)
+
     create_data = create_movie.json()
 
     # Проверяем структуру ответа на создание
@@ -290,46 +308,31 @@ def create_film_response(api_manager_admin, film_data):
     assert isinstance(create_data["genre"], dict)
     assert "name" in create_data["genre"]
 
+    # Проверяем формат createdAt через чекеры
+    assert_valid_iso_datetime(create_data["createdAt"])
+    assert_datetime_in_range(create_data["createdAt"], before_request, after_request)
+
     movie_id = create_data["id"]
 
-    yield create_data
+    yield create_movie
 
     api_manager_admin.films_api.delete_movie(movie_id)
 
 
 @pytest.fixture(scope="function")  # переделано под ApiManager
-def create_film_id(api_manager_admin, film_data):
+def create_film_id(api_manager_admin, create_film_response):
     """
     Фикстура для создания фильма и возврата его ID.
     Аутентифицируется как админ, создаёт фильм, возвращает ID, а после теста удаляет фильм.
 
     :param api_manager_admin: Экземпляр админского ApiManager.
-    :param film_data: Данные для создания фильма.
+    :param create_film_response: Фикстура для создания фильма.
     :return: ID созданного фильма.
     """
-    create_movie = api_manager_admin.films_api.create_movie(film_data)
-    create_data = create_movie.json()
 
-    # Проверяем структуру ответа на создание
-    required_fields = ["id", "name", "price", "description", "imageUrl",
-                       "location", "published", "genreId", "genre", "createdAt", "rating"]
-    for field in required_fields:
-        assert field in create_data, f"Отсутствует поле {field}"
-
-    # Проверяем типы в ответе на создание
-    assert isinstance(create_data["id"], int)
-    assert isinstance(create_data["name"], str)
-    assert isinstance(create_data["price"], int)
-    assert isinstance(create_data["published"], bool)
-    assert isinstance(create_data["genreId"], int)
-    assert isinstance(create_data["genre"], dict)
-    assert "name" in create_data["genre"]
-
-    movie_id = create_data["id"]
+    movie_id = create_film_response.json()["id"]
 
     yield movie_id
-
-    api_manager_admin.films_api.delete_movie(movie_id)
 
 
 @pytest.fixture(scope="function")

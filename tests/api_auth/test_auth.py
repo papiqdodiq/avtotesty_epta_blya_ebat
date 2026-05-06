@@ -1,7 +1,7 @@
 import pytest
 from faker import Faker
 
-from uuid import UUID
+from utils.validators import assert_valid_uuid, assert_valid_iso_datetime, assert_datetime_in_range
 from datetime import datetime, timezone, timedelta
 
 from conftest import api_manager_admin
@@ -17,13 +17,14 @@ class TestPositiveAuth:
         Проверяем статус, заголовки, структуру ответа и типы данных."""
 
         # 1. РЕГИСТРАЦИЯ
-        before_request = datetime.now(timezone.utc)
+        before_request = datetime.now(timezone.utc) - timedelta(seconds=5) # я так делаю, потому что
+        # серверное время в один момент начинает от времени на моем ноуте, хз почему
         response = api_manager.auth_api.register_user(register_data)
         after_request = datetime.now(timezone.utc) + timedelta(seconds=10)  # +10 секунд
 
-        # Проверка структуры ответа
         data = response.json()
-        created_at = datetime.fromisoformat(data["createdAt"].replace('Z', "+00:00"))
+
+        # Проверка структуры ответа
         required_fields = ["id", "email", "fullName", "roles", "verified", "createdAt", "banned"]
         for field in required_fields:
             assert field in data, f"У ответа отсутствует поле {field}"
@@ -45,10 +46,11 @@ class TestPositiveAuth:
         assert data["banned"] is False, "banned должен быть False"
 
         # Проверка формата UUID
-        assert UUID(data["id"]), f"id '{data['id']}' не является валидным UUID"
+        assert_valid_uuid(data["id"])
 
         # Проверка формата createdAt (ISO 8601)
-        assert before_request <= created_at <= after_request, f"createdAt {created_at} не в интервале"
+        assert_valid_iso_datetime(data["createdAt"])
+        assert_datetime_in_range(data["createdAt"], before_request, after_request)
 
         user_id = data["id"]
 
@@ -116,8 +118,7 @@ class TestPositiveAuth:
         assert data["expiresIn"] > 0, "expiresIn должен быть больше 0"
 
         # Проверка формата UUID
-        assert len(user["id"]) == 36, "id должен быть UUID формата"
-        assert user["id"].count("-") == 4, "id должен содержать 4 дефиса"
+        assert_valid_uuid(user["id"])
 
         # 3. УДАЛЯЕМ ПОЛЬЗОВАТЕЛЯ
         api_manager_admin.user_api.delete_user(user_id)

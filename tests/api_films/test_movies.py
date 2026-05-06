@@ -1,5 +1,7 @@
 import pytest
 from faker import Faker
+from utils.validators import assert_valid_iso_datetime, assert_datetime_in_range
+from datetime import datetime, timezone, timedelta
 
 faker = Faker('ru_RU')
 
@@ -25,7 +27,8 @@ class TestPositiveMovies:
 
         # Проверка совпадения ответа с params в запросе
         assert data["page"] == billboard_params["page"], "Номер страницы отличается от номера в params запроса"
-        assert data["pageSize"] == billboard_params["pageSize"], "Размер страницы отличается от номера в params запроса"
+        assert data["pageSize"] == billboard_params["pageSize"], ("Размер страницы отличается от номера в params"
+                                                                  " запроса")
 
         # Если есть фильмы, проверяем структуру первого
         if data["movies"]:
@@ -55,7 +58,8 @@ class TestPositiveMovies:
 
         # Проверка совпадения ответа с params в запросе
         assert data["page"] == billboard_params["page"], "Номер страницы отличается от номера в params запроса"
-        assert data["pageSize"] == billboard_params["pageSize"], "Размер страницы отличается от номера в params запроса"
+        assert data["pageSize"] == billboard_params["pageSize"], ("Размер страницы отличается от номера в params"
+                                                                  " запроса")
 
         # Если есть фильмы, проверяем структуру первого
         if data["movies"]:
@@ -75,15 +79,41 @@ class TestPositiveMovies:
         })
         del new_billboard_params["locations"]
 
-        api_manager.films_api.get_billboard(new_billboard_params)
+        get_billboard = api_manager.films_api.get_billboard(new_billboard_params)
+
+        # Проверка структуры ответа
+        data = get_billboard.json()
+        required_fields = ["movies", "count", "page", "pageSize", "pageCount"]
+        for field in required_fields:
+            assert field in data, f"Отсутствует поле {field}"
+
+        # Проверка типов
+        assert isinstance(data["movies"], list), "movies должен быть списком"
+        assert isinstance(data["count"], int), "count должен быть числом"
+        assert isinstance(data["page"], int), "page должен быть числом"
+        assert isinstance(data["pageSize"], int), "pageSize должен быть числом"
+        assert isinstance(data["pageCount"], int), "pageCount должен быть числом"
+
+        # Проверка совпадения ответа с params в запросе
+        assert data["page"] == billboard_params["page"], "Номер страницы отличается от номера в params запроса"
+        assert data["pageSize"] == billboard_params["pageSize"], ("Размер страницы отличается от номера в params"
+                                                                  " запроса")
+
+        # Если есть фильмы, проверяем структуру первого
+        if data["movies"]:
+            movie = data["movies"][0]
+            movie_fields = ["id", "name", 'description', "price", 'rating', 'createdAt', 'genre',
+                            'imageUrl', "location", "published", "genreId"]
+            for field in movie_fields:
+                assert field in movie, f"У фильма отсутствует поле {field}"
 
     def test_create_movie(self, api_manager, create_film_response, film_data):
         """Позитив: создание фильма.
         Проверяем структуру ответа, типы данных и содержимое."""
 
         # 1. СОЗДАЁМ ФИЛЬМ
-        create_data = create_film_response
-        movie_id = create_film_response["id"]
+        create_data = create_film_response.json()
+        movie_id = create_film_response.json()["id"]
 
         # Проверяем совпадение с отправленными данными
         assert create_data["name"] == film_data["name"]
@@ -118,7 +148,16 @@ class TestPositiveMovies:
             "genreId": 2
         })
 
+        before_request = datetime.now(timezone.utc) - timedelta(seconds=5) # я так делаю,
+        # потому что серверное время в один момент начинает от времени на моем ноуте, хз почему
         create_movie = api_manager_admin.films_api.create_movie(new_film_data)
+        after_request = datetime.now(timezone.utc) + timedelta(seconds=10)
+        # здесь тоже должно быть дофига проверок, но фикстуру сюда сувать не вариант,
+        # в будущем все равно перенесем эти проверки в более удобное место, например, в апи-классы
+
+        # Проверка формата createdAt (ISO 8601)
+        assert_valid_iso_datetime(create_movie.json()["createdAt"])
+        assert_datetime_in_range(create_movie.json()["createdAt"], before_request, after_request)
 
         movie_id = create_movie.json()["id"]
 
@@ -280,17 +319,19 @@ class TestNegativeMovies:
         negative_params["maxPrice"] = 100
         api_manager.films_api.get_billboard(negative_params, expected_status=400)
 
+    @pytest.mark.skip(reason="БАГ: сервер возвращает 200 вместо 400")
     def test_get_billboard_page_out_of_range(self, api_manager, billboard_params):
         """Негатив: запрос с несуществующей страницей"""
         negative_params = billboard_params.copy()
         negative_params["page"] = 999999
-        api_manager.films_api.get_billboard(negative_params, expected_status=[200, 400])
+        api_manager.films_api.get_billboard(negative_params, expected_status=400)
 
+    @pytest.mark.skip(reason="БАГ: сервер возвращает 200 вместо 400")
     def test_get_billboard_with_invalid_genre(self, api_manager, billboard_params):
         """Негатив: запрос с несуществующим жанром"""
         negative_params = billboard_params.copy()
         negative_params["genreId"] = 999
-        api_manager.films_api.get_billboard(negative_params, expected_status=[200, 400])
+        api_manager.films_api.get_billboard(negative_params, expected_status=400)
 
     def test_get_billboard_negative_page(self, api_manager, billboard_params):
         """Негатив: отрицательная страница"""
@@ -347,14 +388,12 @@ class TestNegativeMovies:
         data["price"] = "сто рублей"
         api_manager_admin.films_api.create_movie(data, expected_status=400)
 
+    @pytest.mark.skip(reason="БАГ: сервер возвращает 200 вместо 400")
     def test_create_movie_extra_field(self, api_manager_admin, film_data):
         """Негатив: создание фильма с лишним полем"""
         data = film_data.copy()
         data["extraField"] = "что-то лишнее"
-        response = api_manager_admin.films_api.create_movie(data, expected_status=[201, 400])
-        if response.status_code == 201:
-            movie_id = response.json().get("id")
-            api_manager_admin.films_api.delete_movie(movie_id)
+        api_manager_admin.films_api.create_movie(data, expected_status=400)
 
     def test_create_movie_invalid_genre_id(self, api_manager_admin, film_data):
         """Негатив: создание фильма с несуществующим genreId"""
@@ -408,19 +447,19 @@ class TestNegativeMovies:
 
     def test_delete_movie_invalid_id(self, api_manager_admin):
         """Негатив: удаление несуществующего фильма"""
-        api_manager_admin.films_api.delete_movie(999999, expected_status=[400, 404])
+        api_manager_admin.films_api.delete_movie(999999, expected_status=404)
 
     def test_delete_movie_negative_id(self, api_manager_admin):
         """Негатив: удаление фильма с отрицательным ID"""
-        api_manager_admin.films_api.delete_movie(-1, expected_status=[400, 404])
+        api_manager_admin.films_api.delete_movie(-1, expected_status=404)
 
     def test_delete_movie_zero_id(self, api_manager_admin):
         """Негатив: удаление фильма с ID = 0"""
-        api_manager_admin.films_api.delete_movie(0, expected_status=[400, 404])
+        api_manager_admin.films_api.delete_movie(0, expected_status=404)
 
     def test_delete_movie_string_id(self, api_manager_admin):
         """Негатив: удаление фильма с ID в виде строки"""
-        api_manager_admin.films_api.delete_movie("abc", expected_status=[400, 404])
+        api_manager_admin.films_api.delete_movie("abc", expected_status=404)
 
     # ========== PATCH /movies/{id} ==========
     def test_patch_movie_without_token(self, api_manager, create_film_id):
@@ -449,7 +488,7 @@ class TestNegativeMovies:
         """Негатив: редактирование имени на уже существующее название фильма"""
 
         # Создаём первый фильм и запоминаем значения
-        existing_name = create_film_response["name"]
+        existing_name = create_film_response.json()["name"]
 
         # Создаём второй фильм с уникальным названием
         new_film_data = film_data.copy()
@@ -489,6 +528,7 @@ class TestNegativeMovies:
         movie_id = create_film_id
         api_manager_admin.films_api.patch_movie(movie_id, {"price": "сто рублей"}, expected_status=400)
 
+    @pytest.mark.skip(reason="БАГ: сервер возвращает 200 вместо 400")
     def test_patch_movie_empty_body(self, api_manager_admin, create_film_id):
         """Негатив/Позитив: PATCH с пустым телом (должен вернуть 200 или 400)"""
         movie_id = create_film_id
@@ -499,7 +539,7 @@ class TestNegativeMovies:
         original_price = get_before.json().get("price")
 
         # Отправляем PATCH с пустым телом
-        response = api_manager_admin.films_api.patch_movie(movie_id, {}, expected_status=[200, 400])
+        response = api_manager_admin.films_api.patch_movie(movie_id, {}, expected_status=400)
 
         if response.status_code == 200:
             # Проверяем, что данные НЕ изменились
@@ -518,7 +558,7 @@ class TestNegativeMovies:
             "anotherExtra": 12345
         }
 
-        response = api_manager_admin.films_api.patch_movie(movie_id, patch_data, expected_status=[200, 400])
+        response = api_manager_admin.films_api.patch_movie(movie_id, patch_data, expected_status=400)
 
         if response.status_code == 200:
             get_movie = api_manager_admin.films_api.get_movie(movie_id)
@@ -530,7 +570,8 @@ class TestNegativeMovies:
         """Негатив: PATCH только с лишним полем (без изменений)"""
         movie_id = create_film_id
 
-        response = api_manager_admin.films_api.patch_movie(movie_id, {"extraField": "лишнее"}, expected_status=[200, 400])
+        response = api_manager_admin.films_api.patch_movie(movie_id, {"extraField": "лишнее"},
+                                                           expected_status=400)
 
         if response.status_code == 200:
             get_after = api_manager_admin.films_api.get_movie(movie_id)
@@ -540,4 +581,5 @@ class TestNegativeMovies:
     def test_put_movie_not_allowed(self, api_manager_admin, create_film_id):
         """Негатив: PUT метод не должен работать (в документации его нет)"""
         movie_id = create_film_id
-        api_manager_admin.films_api.send_request("PUT", f"/movies/{movie_id}", data={"name": "new"}, expected_status=405)
+        api_manager_admin.films_api.send_request("PUT", f"/movies/{movie_id}", data={"name": "new"},
+                                                 expected_status=405)
