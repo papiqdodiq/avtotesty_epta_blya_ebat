@@ -2,204 +2,104 @@ import pytest
 from constants import AUTH_URL
 from faker import Faker
 
+from models.base_models import CreateUserData, CreateUserResponse, PatchUserResponse
+
+
 faker_ru = Faker('ru_RU')  # для имён
 faker_en = Faker('en_US')  # для email
 
+
 class TestUserPositive:
 
-    def test_create_user_success(self, auth_session):
+    def test_create_user_success(self, api_manager_admin, register_data_pydantic):
         """Позитив: успешное создание пользователя админом с валидными данными.
         Проверяем статус, заголовки, структуру ответа и типы данных."""
 
-        # Генерируем уникальные данные
-        email = faker_en.email()
-        full_name = faker_ru.name()
-        # БАГ!!! В регулярном выражении отсутствует символ "!" хотя в документации он указан:
+        # БАГ!!! В регулярном выражении ПАРОЛЯ отсутствует символ "!" хотя в документации он указан:
         # password must match /^(?=.*[a-zA-Zа-яА-Я])(?=.*\\d)[a-zA-Zа-яА-Я\\d?@#$%^&*_\\-+()\\[\\]{}><\\\\/\\\\|\"'.,:;]{8,20}$/ regular expression
-        # Используем символ "@" который есть и в документации, и в регулярном выражении
-        password = "Test123456@"  # @ есть в документации и в регулярке
+        # Если пароль нагенерирует пароль с символом "!", то тест упадет.
 
-        user_data = {
-            "email": email,
-            "fullName": full_name,
-            "password": password,
-            "verified": True,
-            "banned": False
-        }
+        user_data = CreateUserData(
+            email=register_data_pydantic.email,
+            fullName=register_data_pydantic.fullName,
+            password=register_data_pydantic.password,
+            verified=True,
+            banned=False
+        )
 
-        response = auth_session.post(f"{AUTH_URL}/user", json=user_data)
+        response = api_manager_admin.user_api.create_user(user_data.model_dump())
 
-        # Статус и заголовки
-        assert response.status_code == 201, f"Ошибка при создании пользователя: {response.text}"
-        assert response.headers.get("Content-Type") == "application/json; charset=utf-8", "Неверный Content-Type"
-
-        # Проверка структуры ответа
-        data = response.json()
-        required_fields = ["id", "email", "fullName", "roles", "verified", "createdAt", "banned"]
-        for field in required_fields:
-            assert field in data, f"У ответа отсутствует поле {field}"
-
-        # Проверка типов
-        assert isinstance(data["id"], str), "id должен быть строкой (UUID)"
-        assert isinstance(data["email"], str), "email должен быть строкой"
-        assert isinstance(data["fullName"], str), "fullName должен быть строкой"
-        assert isinstance(data["roles"], list), "roles должен быть списком"
-        assert isinstance(data["verified"], bool), "verified должен быть булевым"
-        assert isinstance(data["createdAt"], str), "createdAt должен быть строкой"
-        assert isinstance(data["banned"], bool), "banned должен быть булевым"
+        data = CreateUserResponse(**response.json())
 
         # Проверка значений
-        assert data["email"] == email, "email не совпадает"
-        assert data["fullName"] == full_name, "fullName не совпадает"
-        assert "USER" in data["roles"], "роль USER отсутствует"
-        assert data["verified"] is True, "verified должен быть True"
-        assert data["banned"] is False, "banned должен быть False"
-
-        # Проверка формата UUID
-        assert len(data["id"]) == 36, "id должен быть UUID формата"
-        assert data["id"].count("-") == 4, "id должен содержать 4 дефиса"
-
-        # Проверка формата createdAt (ISO 8601)
-        assert "T" in data["createdAt"], "createdAt должен быть в формате ISO 8601"
+        assert data.email == user_data.email, "email не совпадает"
+        assert data.fullName == user_data.fullName, "fullName не совпадает"
+        assert "USER" in data.roles, "роль USER отсутствует"
+        assert "ADMIN" not in data.roles, "роль ADMIN не должна быть"
+        assert "SUPER_ADMIN" not in data.roles, "роль SUPER_ADMIN не должна быть"
+        assert data.verified is True, "verified должен быть True"
+        assert data.banned is False, "banned должен быть False"
 
         # Чистим
-        auth_session.delete(f"{AUTH_URL}/user/{data['id']}")
+        user_id = data.id
+        api_manager_admin.user_api.delete_user(user_id)
 
-    def test_update_user_verified_status(self, auth_session, create_user):
+    @pytest.mark.parametrize("update_data", [
+        {"verified": False},
+        {"banned": True},
+        {"roles": ["USER", "ADMIN"]},
+        {"roles": ["USER", "ADMIN", "SUPER_ADMIN"]},
+        {"roles": []},
+    ])
+    def test_update_user(self, api_manager_admin, create_user_pydantic, update_data):
         """Позитив: успешное обновление статуса verified пользователя."""
 
-        user_id = create_user["id"]
-        email = create_user["email"]
-        full_name = create_user["full_name"]
-
-        update_data = {
-            "verified": False,
-            "banned": False,
-            "roles": ["USER"]
-        }
-
-        response = auth_session.patch(f"{AUTH_URL}/user/{user_id}", json=update_data)
-
-        assert response.status_code == 200, f"Ошибка при обновлении пользователя: {response.text}"
-        assert response.headers.get("Content-Type") == "application/json; charset=utf-8", "Неверный Content-Type"
+        response = api_manager_admin.user_api.patch_user(create_user_pydantic["id"], update_data)
 
         # БАГ!!! В ответе отсутствует поле id
-        data = response.json()
-        required_fields = ["email", "fullName", "verified", "banned", "roles", "createdAt"]
-        for field in required_fields:
-            assert field in data, f"У ответа отсутствует поле {field}"
+        data = PatchUserResponse(**response.json())
 
-        assert isinstance(data["email"], str), "email должен быть строкой"
-        assert isinstance(data["fullName"], str), "fullName должен быть строкой"
-        assert isinstance(data["verified"], bool), "verified должен быть булевым"
-        assert isinstance(data["banned"], bool), "banned должен быть булевым"
-        assert isinstance(data["roles"], list), "roles должен быть списком"
-
-        assert data["email"] == email, "email не совпадает"
-        assert data["fullName"] == full_name, "fullName не совпадает"
-        assert data["verified"] is False, "verified должен быть False"
-        assert data["banned"] is False, "banned должен быть False"
-        assert "USER" in data["roles"], "роль USER отсутствует"
-
-    def test_update_user_banned_status(self, auth_session, create_user):
-        """Позитив: успешное обновление статуса banned пользователя."""
-
-        user_id = create_user["id"]
-
-        update_data = {
-            "verified": True,
-            "banned": True,
-            "roles": ["USER"]
-        }
-
-        response = auth_session.patch(f"{AUTH_URL}/user/{user_id}", json=update_data)
-
-        assert response.status_code == 200, f"Ошибка при обновлении пользователя: {response.text}"
-
-        data = response.json()
-        assert data["banned"] is True, "banned должен быть True"
-
-    def test_update_user_roles_to_admin(self, auth_session, create_user):
-        """Позитив: успешное изменение роли пользователя на ADMIN."""
-
-        user_id = create_user["id"]
-
-        update_data = {
-            "verified": True,
-            "banned": False,
-            "roles": ["USER", "ADMIN"]
-        }
-
-        response = auth_session.patch(f"{AUTH_URL}/user/{user_id}", json=update_data)
-
-        assert response.status_code == 200, f"Ошибка при обновлении роли: {response.text}"
-
-        data = response.json()
-        assert "USER" in data["roles"], "роль USER отсутствует"
-        assert "ADMIN" in data["roles"], "роль ADMIN отсутствует"
-        assert "SUPER_ADMIN" not in data["roles"], "роль SUPER_ADMIN не должна быть"
-
-    def test_update_user_roles_to_super_admin(self, auth_session, create_user):
-        """Позитив: успешное изменение роли пользователя на SUPER_ADMIN."""
-
-        user_id = create_user["id"]
-
-        update_data = {
-            "verified": True,
-            "banned": False,
-            "roles": ["USER", "ADMIN", "SUPER_ADMIN"]
-        }
-
-        response = auth_session.patch(f"{AUTH_URL}/user/{user_id}", json=update_data)
-
-        assert response.status_code == 200, f"Ошибка при обновлении роли: {response.text}"
-
-        data = response.json()
-        assert "USER" in data["roles"], "роль USER отсутствует"
-        assert "ADMIN" in data["roles"], "роль ADMIN отсутствует"
-        assert "SUPER_ADMIN" in data["roles"], "роль SUPER_ADMIN отсутствует"
-
-    def test_update_user_without_any_role(self, auth_session, create_user):
-        """Позитив: обновление пользователя без ролей."""
-
-        user_id = create_user["id"]
-
-        update_data = {
-            "verified": True,
-            "banned": False,
-            "roles": []
-        }
-
-        response = auth_session.patch(f"{AUTH_URL}/user/{user_id}", json=update_data)
-        assert response.status_code == 200, "Обновление без ролей вызвало ошибку"
+        # Проверка значений
+        assert data.email == create_user_pydantic["email"], "email не совпадает"
+        assert data.fullName == create_user_pydantic["full_name"], "fullName не совпадает"
+        if "verified" in update_data:
+            assert update_data["verified"] == data.verified, "verified должен совпадать с изменением"
+        else:
+            assert data.verified is True, "verified должен быть True"
+        if "banned" in update_data:
+            assert update_data["banned"] == data.banned, "banned должен совпадать с изменением"
+        else:
+            assert data.banned is False, "banned должен быть False"
+        if "roles" in update_data:
+            assert update_data["roles"] == data.roles
+        else:
+            assert data.roles == ["USER"]
 
 
 class TestUserNegative:
 
     # ========== СОЗДАНИЕ ЮЗЕРА (негатив) ==========
-    def test_create_user_duplicate_email(self, auth_session):
+    def test_create_user_duplicate_email(self, api_manager_admin, register_data_pydantic):
         """Негатив: создание пользователя с уже существующим email"""
 
-        email = faker_en.email()
-        full_name = faker_ru.name()
-        password = "Test123456@"
+        user_data = CreateUserData(
+            email=register_data_pydantic.email,
+            fullName=register_data_pydantic.fullName,
+            password=register_data_pydantic.password,
+            verified=True,
+            banned=False
+        )
 
-        user_data = {
-            "email": email,
-            "fullName": full_name,
-            "password": password,
-            "verified": True,
-            "banned": False
-        }
+        # Первый запрос
+        response = api_manager_admin.user_api.create_user(user_data.model_dump())
 
-        response1 = auth_session.post(f"{AUTH_URL}/user", json=user_data)
-        assert response1.status_code == 201
-        user_id = response1.json()["id"]
+        data = CreateUserResponse(**response.json())
 
-        response2 = auth_session.post(f"{AUTH_URL}/user", json=user_data)
-        assert response2.status_code == 409, "Создание с дублирующим email не вызвало ошибку"
+        # Второй запрос
+        api_manager_admin.user_api.create_user(user_data.model_dump(), 409)
 
-        auth_session.delete(f"{AUTH_URL}/user/{user_id}")
+        user_id = data.id
+        api_manager_admin.user_api.delete_user(user_id)
 
     def test_create_user_empty_email(self, auth_session):
         """Негатив: создание пользователя с пустым email"""

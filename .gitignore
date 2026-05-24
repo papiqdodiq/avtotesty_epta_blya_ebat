@@ -3,6 +3,7 @@
 .venv/
 .DS_Store
 /venv/
+module_5/
 __pycache__/
 *.db
 *.xlsx

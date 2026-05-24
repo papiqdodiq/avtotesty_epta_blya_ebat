@@ -1,16 +1,17 @@
+from clients.api_manager import ApiManager
+from models.base_models import RegisterUserResponse
+
 class TestAuthAPI:
-    def test_register_user(self, api_manager, test_user):
+    def test_register_user(self, api_manager: ApiManager, test_user_pydantic):
         """
         Тест на регистрацию пользователя.
-        """ 
-        response = api_manager.auth_api.register_user(test_user)
-        response_data = response.json()
+        """
+        user_data = test_user_pydantic.model_dump() # делаем словарь, а не JSON объект!!!
+        response = api_manager.auth_api.register_user(user_data)
+        response_data = RegisterUserResponse(**response.json())
 
         # Проверки
-        assert response_data["email"] == test_user["email"], "Email не совпадает"
-        assert "id" in response_data, "ID пользователя отсутствует в ответе"
-        assert "roles" in response_data, "Роли пользователя отсутствуют в ответе"
-        assert "USER" in response_data["roles"], "Роль USER должна быть у пользователя"
+        assert response_data.email == test_user_pydantic.email, "Email не совпадает"
 
     # Сначала он ебанет регистрационный тест (setup) и только после логин тест,
     # ведь тест регистрации у нас зашит в фикстуре.

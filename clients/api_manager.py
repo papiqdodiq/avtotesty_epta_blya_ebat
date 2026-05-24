@@ -65,6 +65,9 @@ class ApiManager:
         self.user_api.set_token(token)
         self.films_api.set_token(token)
 
+    def close_session(self):
+        self.session.close()
+
 
 """
 Конструктор `ApiManager`:

@@ -5,10 +5,11 @@ faker = Faker('ru_RU')
 
 class TestPositiveMoviesGenres:
 
-    def test_get_genres_without_token(self, api_manager):
+    @pytest.mark.slow
+    def test_get_genres_without_token(self, common_user):
         """Позитив: получение списка жанров без токена (PUBLIC ручка).
         Проверяем статус, заголовки и структуру ответа."""
-        get_genres = api_manager.films_api.get_genres()
+        get_genres = common_user.api.films_api.get_genres()
 
         # Проверка структуры ответа (список жанров)
         genres = get_genres.json()
@@ -28,10 +29,10 @@ class TestPositiveMoviesGenres:
         assert genre["name"] is not None, "name не может быть пустым"
         assert genre["id"] > 0, "id должен быть больше 0"
 
-    def test_get_genres_with_token(self, api_manager_admin):
+    def test_get_genres_with_token(self, super_admin):
         """Позитив: получение списка жанров с токеном.
         Проверяем статус, заголовки и структуру ответа."""
-        get_genres = api_manager_admin.films_api.get_genres()
+        get_genres = super_admin.api.films_api.get_genres()
 
         # Проверка структуры ответа (список жанров)
         genres = get_genres.json()
@@ -51,7 +52,8 @@ class TestPositiveMoviesGenres:
         assert genre["name"] is not None, "name не может быть пустым"
         assert genre["id"] > 0, "id должен быть больше 0"
 
-    def test_create_genre(self, api_manager_admin, create_genre_id, genre_data):
+    @pytest.mark.slow
+    def test_create_genre(self, super_admin, create_genre_id, genre_data):
         """Позитив: создание жанра.
         Проверяем: создание, получение по ID, совпадение данных, удаление."""
 
@@ -59,23 +61,23 @@ class TestPositiveMoviesGenres:
         genre_id = create_genre_id
 
         # 2. ПРОВЕРЯЕМ, ЧТО ЖАНР РЕАЛЬНО СОЗДАЛСЯ (GET)
-        get_genre = api_manager_admin.films_api.get_genre(genre_id)
+        get_genre = super_admin.api.films_api.get_genre(genre_id)
 
         get_data = get_genre.json()
         assert get_data["id"] == genre_id, "id не совпадает"
         assert get_data["name"] == genre_data["name"], "name не совпадает"
 
-    def test_delete_genre(self, api_manager_admin, genre_data):
+    def test_delete_genre(self, super_admin, genre_data):
         """Позитив: удаление жанра.
         Проверяем: создание → удаление → проверка, что жанра больше нет."""
 
         # 1. СОЗДАЁМ ЖАНР (нужен существующий жанр для удаления)
-        create_genre = api_manager_admin.films_api.create_genres(genre_data)
+        create_genre = super_admin.api.films_api.create_genres(genre_data)
 
         genre_id = create_genre.json()["id"]
 
         # 2. УДАЛЯЕМ ЖАНР
-        delete_genre = api_manager_admin.films_api.delete_genre(genre_id)
+        delete_genre = super_admin.api.films_api.delete_genre(genre_id)
 
         # Проверка структуры ответа
         data = delete_genre.json()
@@ -92,9 +94,9 @@ class TestPositiveMoviesGenres:
         assert data["name"] == genre_data["name"], "name не совпадает"
 
         # 3. ПРОВЕРЯЕМ, ЧТО ЖАНР ДЕЙСТВИТЕЛЬНО УДАЛИЛСЯ
-        api_manager_admin.films_api.get_genre(genre_id, expected_status=404)
+        super_admin.api.films_api.get_genre(genre_id, expected_status=404)
 
-    def test_get_genre_without_token(self, api_manager, create_genre_id, genre_data):
+    def test_get_genre_without_token(self, super_admin, create_genre_id, genre_data):
         """Позитив: получение жанра по ID без токена (PUBLIC ручка).
         Проверяем статус, заголовки, структуру и содержимое."""
 
@@ -102,7 +104,7 @@ class TestPositiveMoviesGenres:
         genre_id = create_genre_id
 
         # 2. Получаем жанр по ID без токена
-        get_genre = api_manager.films_api.get_genre(genre_id)
+        get_genre = super_admin.api.films_api.get_genre(genre_id)
 
         # Проверка структуры ответа
         data = get_genre.json()
@@ -118,7 +120,7 @@ class TestPositiveMoviesGenres:
         assert data["id"] == genre_id, "id не совпадает"
         assert data["name"] == genre_data["name"], "name не совпадает"
 
-    def test_get_genre_with_token(self, api_manager_admin, create_genre_id, genre_data):
+    def test_get_genre_with_token(self, super_admin, create_genre_id, genre_data):
         """Позитив: получение жанра по ID с токеном.
         Проверяем статус, заголовки, структуру и содержимое."""
 
@@ -126,7 +128,7 @@ class TestPositiveMoviesGenres:
         genre_id = create_genre_id
 
         # 2. Получаем жанр по ID с токеном
-        get_genre = api_manager_admin.films_api.get_genre(genre_id)
+        get_genre = super_admin.api.films_api.get_genre(genre_id)
 
         # Проверка структуры ответа
         data = get_genre.json()
@@ -159,6 +161,20 @@ class TestNegativeMoviesGenres:
         names = [genre["name"] for genre in genres]
         assert genre_data["name"] not in names, "Жанр создался без авторизации"
 
+    def test_create_genre_without_rights(self, common_user, genre_data):
+        """Негатив: создание жанра без нужных прав"""
+        response = common_user.api.films_api.create_genres(genre_data, expected_status=403)
+        error_data = response.json()
+        assert error_data.get("statusCode") == 403
+        assert error_data.get("message") == "Forbidden resource"
+        assert error_data.get("error") == "Forbidden"
+
+        # Дополнительная проверка: жанр НЕ создался
+        get_genres = common_user.api.films_api.get_genres()
+        genres = get_genres.json()
+        names = [genre["name"] for genre in genres]
+        assert genre_data["name"] not in names, "Жанр создался без авторизации"
+
     def test_create_genre_with_invalid_token(self, api_manager, genre_data):
         """Негатив: создание жанра с неверным токеном"""
         api_manager.set_token("invalid_token")
@@ -166,6 +182,8 @@ class TestNegativeMoviesGenres:
         error_data = response.json()
         assert error_data.get("statusCode") == 401
         assert error_data.get("message") == "Unauthorized"
+
+        # Чистим
         api_manager.clear_token()
 
         # Дополнительная проверка: жанр НЕ создался
@@ -175,9 +193,9 @@ class TestNegativeMoviesGenres:
         assert genre_data["name"] not in names, "Жанр создался с неверным токеном"
 
     @pytest.mark.skip(reason="БАГ: сервер возвращает 201 вместо 400")
-    def test_create_genre_empty_name(self, api_manager_admin):
+    def test_create_genre_empty_name(self, super_admin):
         """Негатив: создание жанра с пустым именем"""
-        response = api_manager_admin.films_api.create_genres({"name": ""}, expected_status=400)
+        response = super_admin.api.films_api.create_genres({"name": ""}, expected_status=400)
         error_data = response.json()
         assert error_data.get("statusCode") == 400
         assert error_data.get("error") == "Bad Request"
@@ -189,29 +207,29 @@ class TestNegativeMoviesGenres:
             assert messages == "Поле name должно быть строкой"
 
         # Дополнительная проверка: жанр с пустым именем НЕ создался
-        get_genres = api_manager_admin.films_api.get_genres()
+        get_genres = super_admin.api.films_api.get_genres()
         genres = get_genres.json()
         empty_names = [genre["name"] for genre in genres if genre["name"] == ""]
         assert len(empty_names) == 0, "Жанр с пустым именем создался"
 
-    def test_create_genre_duplicate(self, api_manager_admin, create_genre_id, genre_data):
+    def test_create_genre_duplicate(self, super_admin, create_genre_id, genre_data):
         """Негатив: создание жанра с уже существующим именем"""
         # Создаём первый жанр (фикстура create_genre_id уже создала)
-        response = api_manager_admin.films_api.create_genres(genre_data, expected_status=409)
+        response = super_admin.api.films_api.create_genres(genre_data, expected_status=409)
         error_data = response.json()
         assert error_data.get("statusCode") == 409
         assert error_data.get("error") == "Conflict"
         assert error_data.get("message") == "Такой жанр уже существует"
 
         # Дополнительная проверка: жанр не создался повторно
-        get_genres = api_manager_admin.films_api.get_genres()
+        get_genres = super_admin.api.films_api.get_genres()
         genres = get_genres.json()
         count = sum(1 for genre in genres if genre["name"] == genre_data["name"])
         assert count == 1, f"Жанр '{genre_data['name']}' создался повторно, ожидался 1, получено {count}"
 
-    def test_create_genre_empty_body(self, api_manager_admin):
+    def test_create_genre_empty_body(self, super_admin):
         """Негатив: создание жанра с пустым телом запроса"""
-        response = api_manager_admin.films_api.create_genres({}, expected_status=400)
+        response = super_admin.api.films_api.create_genres({}, expected_status=400)
         error_data = response.json()
         assert error_data.get("statusCode") == 400
         assert error_data.get("error") == "Bad Request"
@@ -222,16 +240,16 @@ class TestNegativeMoviesGenres:
             assert messages == "Поле name должно быть строкой"
 
         # Дополнительная проверка: никакой жанр не создался
-        get_genres = api_manager_admin.films_api.get_genres()
+        get_genres = super_admin.api.films_api.get_genres()
         genres = get_genres.json()
         # Проверяем, что нет жанров с пустым именем или без имени
         invalid_genres = [g for g in genres if g.get("name") is None]
         assert len(invalid_genres) == 0, "Создался жанр с пустым телом"
 
     @pytest.mark.skip(reason="БАГ: запрос на создание не выполняется, но жанр с пустым именем существует в БД")
-    def test_create_genre_missing_name(self, api_manager_admin):
+    def test_create_genre_missing_name(self, super_admin):
         """Негатив: создание жанра без поля name"""
-        response = api_manager_admin.films_api.create_genres({"wrong_field": "value"}, expected_status=400)
+        response = super_admin.api.films_api.create_genres({"wrong_field": "value"}, expected_status=400)
         error_data = response.json()
         assert error_data.get("statusCode") == 400
         assert error_data.get("error") == "Bad Request"
@@ -242,7 +260,7 @@ class TestNegativeMoviesGenres:
             assert messages == "Поле name должно быть строкой"
 
         # Дополнительная проверка: жанр не создался
-        get_genres = api_manager_admin.films_api.get_genres()
+        get_genres = super_admin.api.films_api.get_genres()
         genres = get_genres.json()
         # Проверяем, что нет жанров с именем из wrong_field
         # (у нас нет имени, поэтому просто убеждаемся, что новых жанров с пустым именем нет)
@@ -250,13 +268,13 @@ class TestNegativeMoviesGenres:
         assert len(empty_or_none) == 0, "Создался жанр без поля name"
 
     @pytest.mark.skip(reason="БАГ: сервер возвращает 200 вместо 400")
-    def test_create_genre_extra_field(self, api_manager_admin):
+    def test_create_genre_extra_field(self, super_admin):
         """Негатив/Позитив: создание жанра с лишним полем."""
 
         genre_name = faker.sentence(nb_words=2) + "1"
 
         # 1. СОЗДАЁМ ЖАНР С ЛИШНИМ ПОЛЕМ
-        api_manager_admin.films_api.create_genres({
+        super_admin.api.films_api.create_genres({
             "name": genre_name,
             "wrong_field": "value"
         }, expected_status=400)
@@ -276,6 +294,23 @@ class TestNegativeMoviesGenres:
 
         # Дополнительная проверка: жанр НЕ удалился
         get_genre = api_manager.films_api.get_genre(genre_id)
+        assert get_genre.status_code == 200, "Жанр удалился без авторизации"
+
+    def test_delete_genre_without_rights(self, common_user, create_genre_id):
+        """Негатив: удаление жанра без нужных прав"""
+
+        # Создаём жанр
+        genre_id = create_genre_id
+
+        # Пытаемся удалить без прав
+        response = common_user.api.films_api.delete_genre(genre_id, expected_status=403)
+        error_data = response.json()
+        assert error_data.get("statusCode") == 403
+        assert error_data.get("message") == "Forbidden resource"
+        assert error_data.get("error") == "Forbidden"
+
+        # Дополнительная проверка: жанр НЕ удалился
+        get_genre = common_user.api.films_api.get_genre(genre_id)
         assert get_genre.status_code == 200, "Жанр удалился без авторизации"
 
     def test_delete_genre_with_invalid_token(self, api_manager, create_genre_id):
@@ -298,83 +333,84 @@ class TestNegativeMoviesGenres:
         get_genre = api_manager.films_api.get_genre(genre_id)
         assert get_genre.status_code == 200, "Жанр удалился с неверным токеном"
 
-    def test_delete_genre_invalid_id(self, api_manager_admin):
+    def test_delete_genre_invalid_id(self, super_admin):
         """Негатив: удаление жанра с несуществующим ID"""
-        response = api_manager_admin.films_api.delete_genre(999999, expected_status=404)
+        response = super_admin.api.films_api.delete_genre(999999, expected_status=404)
         error_data = response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"
         assert error_data.get("message") == "Жанр не найден"
 
-    def test_delete_genre_negative_id(self, api_manager_admin):
+    def test_delete_genre_negative_id(self, super_admin):
         """Негатив: удаление жанра с отрицательным ID"""
-        response = api_manager_admin.films_api.delete_genre(-1, expected_status=404)
+        response = super_admin.api.films_api.delete_genre(-1, expected_status=404)
         error_data = response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"
         assert error_data.get("message") == "Жанр не найден"
 
-    def test_delete_genre_zero_id(self, api_manager_admin):
+    def test_delete_genre_zero_id(self, super_admin):
         """Негатив: удаление жанра с ID = 0"""
-        response = api_manager_admin.films_api.delete_genre(0, expected_status=404)
+        response = super_admin.api.films_api.delete_genre(0, expected_status=404)
         error_data = response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"
         assert error_data.get("message") == "Жанр не найден"
 
-    def test_delete_genre_string_id(self, api_manager_admin):
+    def test_delete_genre_string_id(self, super_admin):
         """Негатив: удаление жанра с ID в виде строки"""
-        response = api_manager_admin.films_api.delete_genre("abc", expected_status=404)
+        response = super_admin.api.films_api.delete_genre("abc", expected_status=404)
         error_data = response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"
         assert error_data.get("message") == "Жанр не найден"
 
-    def test_delete_genre_twice(self, api_manager_admin, genre_data):
+    def test_delete_genre_twice(self, super_admin, genre_data):
         """Негатив: повторное удаление уже удалённого жанра"""
 
         # Создаём жанр (без фикстуры, ведь у меня в ней удаление)
-        response = api_manager_admin.films_api.create_genres(genre_data)
+        response = super_admin.api.films_api.create_genres(genre_data)
         genre_id = response.json()["id"]
 
         # Первое удаление
-        api_manager_admin.films_api.delete_genre(genre_id)
+        super_admin.api.films_api.delete_genre(genre_id)
 
         # Второе удаление
-        second_response = api_manager_admin.films_api.delete_genre(genre_id, expected_status=404)
+        second_response = super_admin.api.films_api.delete_genre(genre_id, expected_status=404)
         error_data = second_response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"
         assert error_data.get("message") == "Жанр не найден"
 
     # ========== ПОЛУЧЕНИЕ ЖАНРА ПО ID (негатив) ==========
-    def test_get_genre_invalid_id(self, api_manager):
+    @pytest.mark.slow
+    def test_get_genre_invalid_id(self, common_user):
         """Негатив: получение жанра с несуществующим ID"""
-        response = api_manager.films_api.get_genre(999999, expected_status=404)
+        response = common_user.api.films_api.get_genre(999999, expected_status=404)
         error_data = response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"
         assert error_data.get("message") == "Жанр не найден"
 
-    def test_get_genre_negative_id(self, api_manager):
+    def test_get_genre_negative_id(self, common_user):
         """Негатив: получение жанра с отрицательным ID"""
-        response = api_manager.films_api.get_genre(-1, expected_status=404)
+        response = common_user.api.films_api.get_genre(-1, expected_status=404)
         error_data = response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"
         assert error_data.get("message") == "Жанр не найден"
 
-    def test_get_genre_zero_id(self, api_manager):
+    def test_get_genre_zero_id(self, common_user):
         """Негатив: получение жанра с ID = 0"""
-        response = api_manager.films_api.get_genre(0, expected_status=404)
+        response = common_user.api.films_api.get_genre(0, expected_status=404)
         error_data = response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"
         assert error_data.get("message") == "Жанр не найден"
 
-    def test_get_genre_string_id(self, api_manager):
+    def test_get_genre_string_id(self, common_user):
         """Негатив: получение жанра с ID в виде строки"""
-        response = api_manager.films_api.get_genre("abc", expected_status=404)
+        response = common_user.api.films_api.get_genre("abc", expected_status=404)
         error_data = response.json()
         assert error_data.get("statusCode") == 404
         assert error_data.get("error") == "Not Found"

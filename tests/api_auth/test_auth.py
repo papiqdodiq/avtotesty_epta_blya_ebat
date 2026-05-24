@@ -1,66 +1,55 @@
 import pytest
 from faker import Faker
 
-from utils.validators import assert_valid_uuid, assert_valid_iso_datetime, assert_datetime_in_range
+from utils.validators import assert_valid_iso_datetime, assert_datetime_in_range
 from datetime import datetime, timezone, timedelta
 
-from conftest import api_manager_admin
+from enum_constants.roles import Roles
+
+from models.base_models import RegisterUserResponse, LoginUserResponse, TestUser
+
 
 faker = Faker('ru_RU')
+
 
 # Тут использую кастом реквестер и api-менеджер (отредачил все позитивные тесты,
 # используя api-классы с методами для /register, /login, /get, /delete)
 class TestPositiveAuth:
 
-    def test_register_success(self, api_manager, api_manager_admin, register_data):
+    def test_register_success(self, api_manager, api_manager_admin, register_data_pydantic):
         """Позитив: успешная регистрация пользователя с валидными данными.
         Проверяем статус, заголовки, структуру ответа и типы данных."""
 
         # 1. РЕГИСТРАЦИЯ
         before_request = datetime.now(timezone.utc) - timedelta(seconds=5) # я так делаю, потому что
         # серверное время в один момент начинает от времени на моем ноуте, хз почему
-        response = api_manager.auth_api.register_user(register_data)
+        reg_data = register_data_pydantic.model_dump() # делаем словарь, а не JSON объект!!!
+        response = api_manager.auth_api.register_user(reg_data)
         after_request = datetime.now(timezone.utc) + timedelta(seconds=10)  # +10 секунд
 
-        data = response.json()
-
-        # Проверка структуры ответа
-        required_fields = ["id", "email", "fullName", "roles", "verified", "createdAt", "banned"]
-        for field in required_fields:
-            assert field in data, f"У ответа отсутствует поле {field}"
-
-        # Проверка типов
-        assert isinstance(data["id"], str), "id должен быть строкой (UUID)"
-        assert isinstance(data["email"], str), "email должен быть строкой"
-        assert isinstance(data["fullName"], str), "fullName должен быть строкой"
-        assert isinstance(data["roles"], list), "roles должен быть списком"
-        assert isinstance(data["verified"], bool), "verified должен быть булевым"
-        assert isinstance(data["createdAt"], str), "createdAt должен быть строкой"
-        assert isinstance(data["banned"], bool), "banned должен быть булевым"
+        data = RegisterUserResponse(**response.json())
 
         # Проверка значений
-        assert data["email"] == register_data["email"], "email не совпадает"
-        assert data["fullName"] == register_data["fullName"], "fullName не совпадает"
-        assert "USER" in data["roles"], "роль USER отсутствует"
-        assert data["verified"] is True, "verified должен быть True"
-        assert data["banned"] is False, "banned должен быть False"
+        assert data.email == register_data_pydantic.email, "email не совпадает"
+        assert data.fullName == register_data_pydantic.fullName, "fullName не совпадает"
 
-        # Проверка формата UUID
-        assert_valid_uuid(data["id"])
+        assert "USER" in data.roles, "роль USER отсутствует"
+        assert data.verified is True, "verified должен быть True"
+        assert data.banned is False, "banned должен быть False"
 
         # Проверка формата createdAt (ISO 8601)
-        assert_valid_iso_datetime(data["createdAt"])
-        assert_datetime_in_range(data["createdAt"], before_request, after_request)
+        assert_valid_iso_datetime(data.createdAt)
+        assert_datetime_in_range(data.createdAt, before_request, after_request)
 
-        user_id = data["id"]
+        user_id = data.id
 
         # 2. ПРОВЕРЯЕМ, ЧТО ПОЛЬЗОВАТЕЛЬ РЕАЛЬНО СОЗДАЛСЯ (GET)
         get_user = api_manager_admin.user_api.get_user_info(user_id)
 
         get_data = get_user.json()
         assert get_data["id"] == user_id, "id не совпадает"
-        assert get_data["email"] == register_data["email"], "email не совпадает"
-        assert get_data["fullName"] == register_data["fullName"], "fullName не совпадает"
+        assert get_data["email"] == register_data_pydantic.email, "email не совпадает"
+        assert get_data["fullName"] == register_data_pydantic.fullName, "fullName не совпадает"
         assert get_data["verified"] is True, "verified должен быть True"
         assert get_data["banned"] is False, "banned должен быть False"
 
@@ -74,51 +63,30 @@ class TestPositiveAuth:
         # Проверяем, что тело ответа пустое (пользователь не найден)
         assert get_deleted.json() == {}, "Тело ответа не пустое, пользователь не удалился"
 
-    def test_login_success(self, api_manager, api_manager_admin, register_data):
+    def test_login_success(self, api_manager, api_manager_admin, register_data_pydantic):
         """Позитив: успешный логин пользователя с корректными данными.
         Проверяем статус, заголовки, структуру ответа и типы данных."""
 
         # 1. СНАЧАЛА РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ
-        register_response = api_manager.auth_api.register_user(register_data)
-        user_id = register_response.json()["id"]
+        reg_data = register_data_pydantic.model_dump()
+        register_response = api_manager.auth_api.register_user(reg_data)
+        data = RegisterUserResponse(**register_response.json())
+        user_id = data.id
 
         # 2. ЛОГИН
         login_data = {
-        "email": register_data["email"],
-        "password": register_data["password"]
+            "email": register_data_pydantic.email,
+            "password": register_data_pydantic.password
         }
         response = api_manager.auth_api.login_user(login_data)
 
         # Проверка структуры ответа
-        data = response.json()
-        required_fields = ["user", "accessToken", "refreshToken", "expiresIn"]
-        for field in required_fields:
-            assert field in data, f"У ответа отсутствует поле {field}"
-
-        # Проверка структуры user
-        user = data["user"]
-        user_fields = ["id", "email", "fullName", "roles"]
-        for field in user_fields:
-            assert field in user, f"У user отсутствует поле {field}"
-
-        # Проверка типов
-        assert isinstance(data["accessToken"], str), "accessToken должен быть строкой"
-        assert isinstance(data["refreshToken"], str), "refreshToken должен быть строкой"
-        assert isinstance(data["expiresIn"], int), "expiresIn должен быть числом"
-        assert isinstance(user["id"], str), "id должен быть строкой (UUID)"
-        assert isinstance(user["email"], str), "email должен быть строкой"
-        assert isinstance(user["fullName"], str), "fullName должен быть строкой"
-        assert isinstance(user["roles"], list), "roles должен быть списком"
+        data = LoginUserResponse(**response.json())
 
         # Проверка значений
-        assert user["email"] == register_data["email"], "email не совпадает"
-        assert user["fullName"] == register_data["fullName"], "fullName не совпадает"
-        assert len(data["accessToken"]) > 0, "accessToken не должен быть пустым"
-        assert len(data["refreshToken"]) > 0, "refreshToken не должен быть пустым"
-        assert data["expiresIn"] > 0, "expiresIn должен быть больше 0"
-
-        # Проверка формата UUID
-        assert_valid_uuid(user["id"])
+        user = data.user
+        assert user.email == register_data_pydantic.email, "email не совпадает"
+        assert user.fullName == register_data_pydantic.fullName, "fullName не совпадает"
 
         # 3. УДАЛЯЕМ ПОЛЬЗОВАТЕЛЯ
         api_manager_admin.user_api.delete_user(user_id)
@@ -127,11 +95,11 @@ class TestPositiveAuth:
 class TestNegativeAuth:
 
     # ========== РЕГИСТРАЦИЯ (негатив) ==========
-    def test_register_duplicate_email(self, api_manager, api_manager_admin, create_user, register_data):
+    def test_register_duplicate_email(self, api_manager, api_manager_admin, create_user_pydantic, register_data_pydantic):
         """Негатив: регистрация с уже существующим email"""
-        user_id = create_user["id"]
+        user_id = create_user_pydantic["id"]
 
-        response = api_manager.auth_api.register_user(register_data, expected_status=409)
+        response = api_manager.auth_api.register_user(register_data_pydantic.model_dump(), expected_status=409)
 
         error_data = response.json()
         assert error_data.get("error") == "Conflict"
@@ -139,95 +107,69 @@ class TestNegativeAuth:
 
         # Дополнительная проверка: пользователь остался один
         get_user = api_manager_admin.user_api.get_user_info(user_id)
-        assert get_user.status_code == 200
         assert get_user.json()["id"] == user_id
 
         # Проверяем, что дубликат не создался (пользователей с таким email только один)
-        all_users = api_manager_admin.user_api.get_user_info(register_data["email"])
+        all_users = api_manager_admin.user_api.get_user_info(register_data_pydantic.email)
         if isinstance(all_users.json(), list):
             assert len(all_users.json()) == 1, "Создался дубликат пользователя"
 
-    def test_register_short_password(self, api_manager, api_manager_admin):
-        register_data = {
-            "email": faker.email(),
-            "fullName": faker.name(),
-            "password": "Test1",
-            "passwordRepeat": "Test1"
-        }
-
-        response = api_manager.auth_api.register_user(register_data, expected_status=400)
+    @pytest.mark.parametrize("test_user_data, expected_error_message", [
+        (
+            TestUser(
+                email=faker.email(),
+                fullName=faker.name(),
+                password="Test1",
+                passwordRepeat="Test1",
+                roles=[Roles.USER]
+            ),
+            "Минимальная длина пароля 8 символов"
+        ),
+        (
+            TestUser(
+                email=faker.email(),
+                fullName=faker.name(),
+                password="Testtest!",
+                passwordRepeat="Testtest!",
+                roles=[Roles.USER]
+            ),
+            "Пароль должен содержать хотя бы одну цифру"
+        ),
+        (
+            TestUser(
+                email=faker.email(),
+                fullName=faker.name(),
+                password="test123!",
+                passwordRepeat="test123!",
+                roles=[Roles.USER]
+            ),
+                "Пароль должен содержать хотя бы одну заглавную букву"
+        ),
+        (
+            TestUser(
+                email=faker.email(),
+                fullName=faker.name(),
+                password="Test 123!",
+                passwordRepeat="Test 123!",
+                roles=[Roles.USER]
+            ),
+            "Пароль не должен содержать пробелов"
+        )
+    ])
+    def test_register_invalid_password(self, api_manager, api_manager_admin, test_user_data, expected_error_message):
+        response = api_manager.auth_api.register_user(test_user_data, expected_status=400)
 
         error_data = response.json()
         assert error_data.get("error") == "Bad Request"
         assert isinstance(error_data.get("message"), list)
-        assert "Минимальная длина пароля 8 символов" in error_data["message"]
+        assert expected_error_message in error_data["message"]
 
         # Дополнительная проверка: пользователь НЕ создался
-        get_users = api_manager_admin.user_api.get_user_info(register_data["email"])
+        get_users = api_manager_admin.user_api.get_user_info(test_user_data.email)
         if isinstance(get_users.json(), list):
             assert len(get_users.json()) == 0, "Пользователь создался с коротким паролем"
 
-    def test_register_password_no_digit(self, api_manager, api_manager_admin):
-        register_data = {
-            "email": faker.email(),
-            "fullName": faker.name(),
-            "password": "Testtest!",
-            "passwordRepeat": "Testtest!"
-        }
-
-        response = api_manager.auth_api.register_user(register_data, expected_status=400)
-
-        error_data = response.json()
-        assert error_data.get("error") == "Bad Request"
-        assert isinstance(error_data.get("message"), list)
-        assert "Пароль должен содержать хотя бы одну цифру" in error_data["message"]
-
-        # Дополнительная проверка: пользователь НЕ создался
-        get_users = api_manager_admin.user_api.get_user_info(register_data["email"])
-        if isinstance(get_users.json(), list):
-            assert len(get_users.json()) == 0, "Пользователь создался с паролем без цифры"
-
-    def test_register_password_no_uppercase(self, api_manager, api_manager_admin):
-        register_data = {
-            "email": faker.email(),
-            "fullName": faker.name(),
-            "password": "test123!",
-            "passwordRepeat": "test123!"
-        }
-
-        response = api_manager.auth_api.register_user(register_data, expected_status=400)
-
-        error_data = response.json()
-        assert error_data.get("error") == "Bad Request"
-        assert isinstance(error_data.get("message"), list)
-        assert "Пароль должен содержать хотя бы одну заглавную букву" in error_data["message"]
-
-        # Дополнительная проверка: пользователь НЕ создался
-        get_users = api_manager_admin.user_api.get_user_info(register_data["email"])
-        if isinstance(get_users.json(), list):
-            assert len(get_users.json()) == 0, "Пользователь создался с паролем без заглавной"
-
-    def test_register_password_with_space(self, api_manager, api_manager_admin):
-        register_data = {
-            "email": faker.email(),
-            "fullName": faker.name(),
-            "password": "Test 123!",
-            "passwordRepeat": "Test 123!"
-        }
-
-        response = api_manager.auth_api.register_user(register_data, expected_status=400)
-
-        error_data = response.json()
-        assert error_data.get("error") == "Bad Request"
-        assert isinstance(error_data.get("message"), list)
-        assert "Пароль не должен содержать пробелов" in error_data["message"]
-
-        # Дополнительная проверка: пользователь НЕ создался
-        get_users = api_manager_admin.user_api.get_user_info(register_data["email"])
-        if isinstance(get_users.json(), list):
-            assert len(get_users.json()) == 0, "Пользователь создался с паролем-пробелом"
-
-    def test_register_password_mismatch(self, api_manager, api_manager_admin):
+    def test_register_mismatch_password(self, api_manager, api_manager_admin):
         register_data = {
             "email": faker.email(),
             "fullName": faker.name(),
@@ -248,19 +190,22 @@ class TestNegativeAuth:
             assert len(get_users.json()) == 0, "Пользователь создался с несовпадающими паролями"
 
     # ========== ЛОГИН (негатив) ==========
-    def test_login_wrong_password(self, api_manager, create_user, register_data):
+    def test_login_wrong_password(self, api_manager, create_user_pydantic, register_data_pydantic):
         """Негатив: логин с неверным паролем"""
 
         # Логинимся как юзер из фикстуры
         correct_login_data = {
-            "email": register_data["email"],
-            "password": register_data["password"]
+            "email": register_data_pydantic.email,
+            "password": register_data_pydantic.password
         }
-        api_manager.auth_api.login_user(correct_login_data)
+        response = api_manager.auth_api.login_user(correct_login_data)
+
+        # Проверка структуры ответа
+        LoginUserResponse(**response.json())
 
         # Меняем пароль
         wrong_login_data = {
-            "email": register_data["email"],
+            "email": register_data_pydantic.email,
             "password": "WrongPassword123!"
         }
         response = api_manager.auth_api.login_user(wrong_login_data, expected_status=401)

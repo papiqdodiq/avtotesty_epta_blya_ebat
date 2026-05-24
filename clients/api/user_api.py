@@ -11,6 +11,8 @@ class UserAPI(CustomRequester):
         super().__init__(session=session, base_url="https://auth.dev-cinescope.coconutqa.ru/")
         # - При инициализации получает сессию и базовый URL API.
 
+    # создание и получение юзера по локатору (здесь это user_id) может быть по id или email
+
     def get_user_info(self, user_id, expected_status=200):
         """
         Получение информации о пользователе по его ID.
@@ -22,6 +24,22 @@ class UserAPI(CustomRequester):
         return self.send_request(
             method="GET",
             endpoint=f"/user/{user_id}",
+            expected_status=expected_status
+        )
+
+    def create_user(self, user_data, expected_status=201):
+        return self.send_request(
+            method="POST",
+            endpoint="user",
+            data=user_data,
+            expected_status=expected_status
+        )
+
+    def patch_user(self, user_id, user_data, expected_status=200):
+        return self.send_request(
+            method="PATCH",
+            endpoint=f"/user/{user_id}",
+            data=user_data,
             expected_status=expected_status
         )
 

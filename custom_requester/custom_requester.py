@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from pydantic import BaseModel
 
 class CustomRequester:
     """
@@ -35,6 +36,11 @@ class CustomRequester:
         :return: Объект ответа requests.Response.
         """
         url = f"{self.base_url}{endpoint}"
+
+        if isinstance(data, BaseModel):
+            data = json.loads(data.model_dump_json(exclude_unset=True))
+            # можно написать просто `data = data.model_dump()`, ведь у нас есть `use_enum_values = True` в конфиге
+            # нам не нужно сначала сериализовать в JSON и только после этого в словарь, можно сразу
         response = self.session.request(method, url, json=data, params=params, headers=self.headers)
 
         if need_logging:
@@ -64,8 +70,10 @@ class CustomRequester:
 
     def log_request_and_response(self, response):
         """
-        Логирование запросов и ответов.
-        :param response: Объект ответа requests.Response.
+        Логирование запросов и ответов. Настройки логирования описаны в pytest.ini
+        Преобразует вывод в curl-like (-H хэдэеры), (-d тело)
+
+        :param response: Объект response получаемый из метода "send_request"
         """
         try:
             request = response.request
@@ -79,6 +87,8 @@ class CustomRequester:
             if hasattr(request, 'body') and request.body is not None:
                 if isinstance(request.body, bytes):
                     body = request.body.decode('utf-8')
+                elif isinstance(request.body, str): # было добавлено во время прохождения пайдентика
+                    body = request.body
                 body = f"-d '{body}' \n" if body != '{}' else ''
 
             # Логируем запрос

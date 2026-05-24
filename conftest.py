@@ -9,8 +9,75 @@ from utils.validators import assert_valid_uuid, assert_valid_iso_datetime, asser
 from datetime import datetime, timezone, timedelta
 from clients.api_manager import ApiManager
 
+from resources.user_creds import SuperAdminCreds, AdminCreds
+from entities.user import User
+from enum_constants.roles import Roles
+
+from models.base_models import TestUser, CreateUserData, CreateUserResponse
+
 faker_ru = Faker('ru_RU')
 faker_en = Faker('en_US')
+
+
+#фикстуры для создании сессии юзера (ролевая модель, начало 5 модуля):
+
+@pytest.fixture(scope="session")
+def user_session():  # общая фикстура для admin, super_admin и common_user
+    user_pool = []
+
+    def _create_user_session():
+        session = requests.Session()
+        user_session = ApiManager(session)
+        user_pool.append(user_session)
+        return user_session
+
+    yield _create_user_session
+
+    for user in user_pool:
+        user.close_session()
+
+
+@pytest.fixture
+def admin(user_session):
+    new_session = user_session()
+
+    admin = User(
+        AdminCreds.USERNAME,
+        AdminCreds.PASSWORD,
+        [Roles.ADMIN.value],
+        new_session)
+
+    admin.api.authenticate(admin.creds) # во всех апи-классах одновременно
+    return admin
+
+
+@pytest.fixture
+def super_admin(user_session):
+    new_session = user_session()
+
+    super_admin = User(
+        SuperAdminCreds.USERNAME,
+        SuperAdminCreds.PASSWORD,
+        [Roles.SUPER_ADMIN.value],
+        new_session)
+
+    super_admin.api.authenticate(super_admin.creds) # во всех апи-классах одновременно
+    return super_admin
+
+
+@pytest.fixture
+def common_user(user_session, super_admin, create_user_data):
+    new_session = user_session()
+
+    common_user = User(
+        create_user_data['email'],
+        create_user_data['password'],
+        [Roles.USER.value],
+        new_session)
+
+    super_admin.api.user_api.create_user(create_user_data)
+    common_user.api.authenticate(common_user.creds) # во всех апи-классах одновременно
+    return common_user
 
 
 #фикстуры для кастом реквестера в test_auth и test_user:
@@ -209,7 +276,43 @@ def create_user(auth_session, register_data):
 
 
 @pytest.fixture(scope="function")
-def register_data():
+def create_user_pydantic(api_manager_admin, register_data_pydantic):
+    """
+    Фикстура для создания пользователя (обычного, не админа) через админскую сессию.
+    Генерирует уникальные email, fullName и пароль, создаёт пользователя через POST /user.
+    Использует Pydantic модель CreateTestUser.
+
+    :param register_data_pydantic: Данные для регистрации из пайдентик фикстуры.
+    :param api_manager_admin: Админская сессия.
+    :return: Словарь с ключами id, email, full_name созданного пользователя.
+    """
+
+    user_data = CreateUserData(
+        email=register_data_pydantic.email,
+        fullName=register_data_pydantic.fullName,
+        password=register_data_pydantic.password,
+        verified=True,
+        banned=False
+    )
+
+    response = api_manager_admin.user_api.create_user(user_data.model_dump())
+
+    data = CreateUserResponse(**response.json())
+
+    user_id = data.id
+
+    yield {
+        "id": user_id,
+        "email": register_data_pydantic.email,
+        "full_name": register_data_pydantic.fullName
+    }
+
+    # Чистим после теста
+    api_manager_admin.user_api.delete_user(user_id)
+
+
+@pytest.fixture(scope="function")
+def register_data(): # для негативных тестов
     """
     Фикстура для генерации случайных данных для регистрации пользователя.
     Использует DataGenerator для email, имени и пароля.
@@ -225,10 +328,53 @@ def register_data():
         "fullName": full_name,
         "password": password,
         "passwordRepeat": password,
-        "roles": ["USER"]
+        "roles": [Roles.USER.value]
     }
 
     return data
+
+
+@pytest.fixture(scope="function")
+def register_data_pydantic() -> TestUser:
+    """
+    Генерация случайного пользователя для тестов.
+    Использует Pydantic модель TestUser.
+    """
+    random_email = DataGenerator.generate_random_email()
+    random_name = DataGenerator.generate_random_name()
+    random_password = DataGenerator.generate_random_password()
+
+    return TestUser(
+        email=random_email,
+        fullName=random_name,
+        password=random_password,
+        passwordRepeat=random_password,
+        roles=[Roles.USER]
+    )
+
+
+@pytest.fixture(scope="function") # для test_user (register_data) (ролевая модель, 5 модуль), название отличается от обучалки
+def create_user_data(register_data): # для негативных тестов
+    updated_data = register_data.copy()
+    updated_data.update({
+        "verified": True,
+        "banned": False
+    })
+    return updated_data
+
+
+@pytest.fixture(scope="function")
+def create_user_data_pydantic(test_user_pydantic):
+    """
+    Создание данных пользователя с дополнительными полями verified и banned.
+    Использует Pydantic модель TestUser.
+    """
+    # Создаем копию модели и обновляем поля
+    updated_user = test_user_pydantic.model_copy(update={
+        "verified": True,
+        "banned": False
+    })
+    return updated_user
 
 
 # фикстуры для films:

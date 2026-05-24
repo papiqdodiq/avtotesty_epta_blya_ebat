@@ -7,9 +7,23 @@ faker = Faker('ru_RU')
 
 class TestPositiveMovies:
 
-    def test_get_billboard_without_token(self, api_manager, billboard_params):
+    # задание на параметризацию выполнено тут:
+    @pytest.mark.parametrize("min_price,max_price,locations,genre_id", [(1, 1000, ["MSK", "SPB"], 1), (100, 1000, "SPB", 3),
+    (10, 10000, "MSK", 4)])
+    def test_get_billboard_without_token(self, api_manager, min_price, max_price, locations, genre_id):
         """Позитив: получение афиши без токена.
         Проверяем структуру ответа, типы данных и содержимое."""
+        billboard_params = {
+        "pageSize": faker.random_int(min=1, max=20),
+        "page": faker.random_int(min=1, max=100),
+        "minPrice": min_price,
+        "maxPrice": max_price,
+        "locations": locations,
+        "published": True,
+        "genreId": genre_id,
+        "createdAt": "asc"
+    }
+
         get_billboard = api_manager.films_api.get_billboard(billboard_params)
 
         # Проверка структуры ответа
@@ -30,13 +44,30 @@ class TestPositiveMovies:
         assert data["pageSize"] == billboard_params["pageSize"], ("Размер страницы отличается от номера в params"
                                                                   " запроса")
 
-        # Если есть фильмы, проверяем структуру первого
+        # Если есть фильмы, проверяем структуру первых трех
         if data["movies"]:
-            movie = data["movies"][0]
-            movie_fields = ["id", "name", 'description', "price", 'rating', 'createdAt', 'genre',
-                            'imageUrl', "location", "published", "genreId"]
-            for field in movie_fields:
-                assert field in movie, f"У фильма отсутствует поле {field}"
+            for movie in data["movies"][:3]:
+                # Структура фильма
+                movie_fields = ["id", "name", "description", "price", "rating", "createdAt",
+                                "genre", "imageUrl", "location", "published", "genreId"]
+                for field in movie_fields:
+                    assert field in movie, f"У фильма отсутствует поле {field}"
+
+                # Проверка цены
+                assert  min_price <= movie["price"] <= max_price, \
+                f"Цены {movie['price']} не в диапазоне {min_price}-{max_price}"
+
+                # Проверка локации
+                if isinstance(locations, list):
+                    assert movie["location"] in locations, \
+                    f"Локация {movie['location']} не в {locations}"
+                else:
+                    assert movie["location"] == locations, \
+                    f"Локация {movie['location']} не равна {locations}"
+
+                # Проверка жанра
+                assert movie["genreId"] == genre_id, \
+                    f"Жанр {movie['genreId']} не равен {genre_id}"
 
     def test_get_billboard(self, api_manager_admin, billboard_params):
         """Позитив: получение афиши с токеном.
@@ -432,11 +463,26 @@ class TestNegativeMovies:
         """Негатив: получение фильма с ID в виде строки"""
         api_manager.films_api.get_movie("abc", expected_status=404)
 
-    # ========== DELETE /movies/{id} ==========
+    # ========== DELETE /movies/{id} ==========, задание на параметризацию и ролевую модель выполнено тут:
     def test_delete_movie_without_token(self, api_manager, create_film_id):
         """Негатив: удаление фильма без авторизации"""
         movie_id = create_film_id
         api_manager.films_api.delete_movie(movie_id, expected_status=401)
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("role", ["common_user", "admin"])
+    def test_delete_movie_without_rights(self, role, create_film_id, request):
+        """Негатив: удаление фильма без нужных прав. Параметризация ролевой модели."""
+        user = request.getfixturevalue(role)
+        movie_id = create_film_id
+        response = user.api.films_api.delete_movie(movie_id, expected_status=403)
+        error_data = response.json()
+        assert error_data.get("statusCode") == 403
+        assert error_data.get("message") == "Forbidden resource"
+        assert error_data.get("error") == "Forbidden"
+
+        # Дополнительная проверка: фильм НЕ удалился
+        user.api.films_api.get_movie(movie_id)
 
     def test_delete_movie_with_invalid_token(self, api_manager, create_film_id):
         """Негатив: удаление фильма с неверным токеном"""
@@ -445,21 +491,15 @@ class TestNegativeMovies:
         api_manager.films_api.delete_movie(movie_id, expected_status=401)
         api_manager.clear_token()
 
-    def test_delete_movie_invalid_id(self, api_manager_admin):
-        """Негатив: удаление несуществующего фильма"""
-        api_manager_admin.films_api.delete_movie(999999, expected_status=404)
-
-    def test_delete_movie_negative_id(self, api_manager_admin):
-        """Негатив: удаление фильма с отрицательным ID"""
-        api_manager_admin.films_api.delete_movie(-1, expected_status=404)
-
-    def test_delete_movie_zero_id(self, api_manager_admin):
-        """Негатив: удаление фильма с ID = 0"""
-        api_manager_admin.films_api.delete_movie(0, expected_status=404)
-
-    def test_delete_movie_string_id(self, api_manager_admin):
-        """Негатив: удаление фильма с ID в виде строки"""
-        api_manager_admin.films_api.delete_movie("abc", expected_status=404)
+    @pytest.mark.parametrize("movie_id, expected_status", [
+        (999999, 404),
+        (-1, 404),
+        (0, 404),
+        ("abc", 404)
+    ])
+    def test_delete_movie_invalid_id(self, super_admin, movie_id, expected_status):
+        """Негатив: удаление фильма с некорректными ID"""
+        super_admin.api.films_api.delete_movie(movie_id, expected_status=expected_status)
 
     # ========== PATCH /movies/{id} ==========
     def test_patch_movie_without_token(self, api_manager, create_film_id):
