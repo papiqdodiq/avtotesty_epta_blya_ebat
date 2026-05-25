@@ -1,4 +1,7 @@
 from custom_requester.custom_requester import CustomRequester
+from models.base_models import CreateUserResponse, PatchUserResponse
+from typing import Union
+from requests import Response
 
 # - Наследует методы от CustomRequester.
 class UserAPI(CustomRequester):
@@ -27,21 +30,31 @@ class UserAPI(CustomRequester):
             expected_status=expected_status
         )
 
-    def create_user(self, user_data, expected_status=201):
-        return self.send_request(
+    def create_user(self, user_data, expected_status=201, pydantic=False) -> Union[CreateUserResponse, Response]:
+        response = self.send_request(
             method="POST",
             endpoint="user",
             data=user_data,
             expected_status=expected_status
         )
+        response: Response = response
+        if pydantic:
+            return CreateUserResponse(**response.json())
+        else:
+            return response
 
-    def patch_user(self, user_id, user_data, expected_status=200):
-        return self.send_request(
+    def patch_user(self, user_id, user_data, expected_status=200, pydantic=False) -> Union[PatchUserResponse, Response]:
+        response = self.send_request(
             method="PATCH",
             endpoint=f"/user/{user_id}",
             data=user_data,
             expected_status=expected_status
         )
+        response: Response = response
+        if pydantic:
+            return PatchUserResponse(**response.json())
+        else:
+            return response
 
     def delete_user(self, user_id, expected_status=200):
         """

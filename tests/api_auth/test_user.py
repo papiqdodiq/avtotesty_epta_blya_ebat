@@ -1,8 +1,7 @@
 import pytest
 from constants import AUTH_URL
 from faker import Faker
-
-from models.base_models import CreateUserData, CreateUserResponse, PatchUserResponse
+from models.base_models import CreateUserData
 
 
 faker_ru = Faker('ru_RU')  # для имён
@@ -27,21 +26,19 @@ class TestUserPositive:
             banned=False
         )
 
-        response = api_manager_admin.user_api.create_user(user_data.model_dump())
-
-        data = CreateUserResponse(**response.json())
+        response = api_manager_admin.user_api.create_user(user_data.model_dump(), pydantic=True)
 
         # Проверка значений
-        assert data.email == user_data.email, "email не совпадает"
-        assert data.fullName == user_data.fullName, "fullName не совпадает"
-        assert "USER" in data.roles, "роль USER отсутствует"
-        assert "ADMIN" not in data.roles, "роль ADMIN не должна быть"
-        assert "SUPER_ADMIN" not in data.roles, "роль SUPER_ADMIN не должна быть"
-        assert data.verified is True, "verified должен быть True"
-        assert data.banned is False, "banned должен быть False"
+        assert response.email == user_data.email, "email не совпадает"
+        assert response.fullName == user_data.fullName, "fullName не совпадает"
+        assert "USER" in response.roles, "роль USER отсутствует"
+        assert "ADMIN" not in response.roles, "роль ADMIN не должна быть"
+        assert "SUPER_ADMIN" not in response.roles, "роль SUPER_ADMIN не должна быть"
+        assert response.verified is True, "verified должен быть True"
+        assert response.banned is False, "banned должен быть False"
 
         # Чистим
-        user_id = data.id
+        user_id = response.id
         api_manager_admin.user_api.delete_user(user_id)
 
     @pytest.mark.parametrize("update_data", [
@@ -54,26 +51,24 @@ class TestUserPositive:
     def test_update_user(self, api_manager_admin, create_user_pydantic, update_data):
         """Позитив: успешное обновление статуса verified пользователя."""
 
-        response = api_manager_admin.user_api.patch_user(create_user_pydantic["id"], update_data)
-
         # БАГ!!! В ответе отсутствует поле id
-        data = PatchUserResponse(**response.json())
+        response = api_manager_admin.user_api.patch_user(create_user_pydantic["id"], update_data, pydantic=True)
 
         # Проверка значений
-        assert data.email == create_user_pydantic["email"], "email не совпадает"
-        assert data.fullName == create_user_pydantic["full_name"], "fullName не совпадает"
+        assert response.email == create_user_pydantic["email"], "email не совпадает"
+        assert response.fullName == create_user_pydantic["full_name"], "fullName не совпадает"
         if "verified" in update_data:
-            assert update_data["verified"] == data.verified, "verified должен совпадать с изменением"
+            assert update_data["verified"] == response.verified, "verified должен совпадать с изменением"
         else:
-            assert data.verified is True, "verified должен быть True"
+            assert response.verified is True, "verified должен быть True"
         if "banned" in update_data:
-            assert update_data["banned"] == data.banned, "banned должен совпадать с изменением"
+            assert update_data["banned"] == response.banned, "banned должен совпадать с изменением"
         else:
-            assert data.banned is False, "banned должен быть False"
+            assert response.banned is False, "banned должен быть False"
         if "roles" in update_data:
-            assert update_data["roles"] == data.roles
+            assert update_data["roles"] == response.roles
         else:
-            assert data.roles == ["USER"]
+            assert response.roles == ["USER"]
 
 
 class TestUserNegative:
@@ -91,14 +86,12 @@ class TestUserNegative:
         )
 
         # Первый запрос
-        response = api_manager_admin.user_api.create_user(user_data.model_dump())
-
-        data = CreateUserResponse(**response.json())
+        response = api_manager_admin.user_api.create_user(user_data.model_dump(), pydantic=True)
 
         # Второй запрос
         api_manager_admin.user_api.create_user(user_data.model_dump(), 409)
 
-        user_id = data.id
+        user_id = response.id
         api_manager_admin.user_api.delete_user(user_id)
 
     def test_create_user_empty_email(self, auth_session):

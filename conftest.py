@@ -379,6 +379,14 @@ def create_user_data_pydantic(test_user_pydantic):
 
 # фикстуры для films:
 
+
+@pytest.fixture(scope="function")
+def film_should_exist_after_test(create_film_id, api_manager_admin):
+    yield  # тест выполняется здесь
+    # После теста проверяем что фильм существует
+    api_manager_admin.films_api.get_movie(create_film_id)
+
+
 @pytest.fixture(scope="function")
 def create_film_with_review(api_manager_admin, create_film_response, review_data, get_user_id):
     """

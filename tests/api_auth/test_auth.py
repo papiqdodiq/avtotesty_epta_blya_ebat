@@ -1,12 +1,7 @@
 import pytest
 from faker import Faker
-
 from utils.validators import assert_valid_iso_datetime, assert_datetime_in_range
 from datetime import datetime, timezone, timedelta
-
-from enum_constants.roles import Roles
-
-from models.base_models import RegisterUserResponse, LoginUserResponse, TestUser
 
 
 faker = Faker('ru_RU')
@@ -24,24 +19,22 @@ class TestPositiveAuth:
         before_request = datetime.now(timezone.utc) - timedelta(seconds=5) # я так делаю, потому что
         # серверное время в один момент начинает от времени на моем ноуте, хз почему
         reg_data = register_data_pydantic.model_dump() # делаем словарь, а не JSON объект!!!
-        response = api_manager.auth_api.register_user(reg_data)
+        response = api_manager.auth_api.register_user(reg_data, pydantic=True)
         after_request = datetime.now(timezone.utc) + timedelta(seconds=10)  # +10 секунд
 
-        data = RegisterUserResponse(**response.json())
-
         # Проверка значений
-        assert data.email == register_data_pydantic.email, "email не совпадает"
-        assert data.fullName == register_data_pydantic.fullName, "fullName не совпадает"
+        assert response.email == register_data_pydantic.email, "email не совпадает"
+        assert response.fullName == register_data_pydantic.fullName, "fullName не совпадает"
 
-        assert "USER" in data.roles, "роль USER отсутствует"
-        assert data.verified is True, "verified должен быть True"
-        assert data.banned is False, "banned должен быть False"
+        assert "USER" in response.roles, "роль USER отсутствует"
+        assert response.verified is True, "verified должен быть True"
+        assert response.banned is False, "banned должен быть False"
 
         # Проверка формата createdAt (ISO 8601)
-        assert_valid_iso_datetime(data.createdAt)
-        assert_datetime_in_range(data.createdAt, before_request, after_request)
+        assert_valid_iso_datetime(response.createdAt)
+        assert_datetime_in_range(response.createdAt, before_request, after_request)
 
-        user_id = data.id
+        user_id = response.id
 
         # 2. ПРОВЕРЯЕМ, ЧТО ПОЛЬЗОВАТЕЛЬ РЕАЛЬНО СОЗДАЛСЯ (GET)
         get_user = api_manager_admin.user_api.get_user_info(user_id)
@@ -69,22 +62,18 @@ class TestPositiveAuth:
 
         # 1. СНАЧАЛА РЕГИСТРИРУЕМ ПОЛЬЗОВАТЕЛЯ
         reg_data = register_data_pydantic.model_dump()
-        register_response = api_manager.auth_api.register_user(reg_data)
-        data = RegisterUserResponse(**register_response.json())
-        user_id = data.id
+        register_response = api_manager.auth_api.register_user(reg_data, pydantic=True)
+        user_id = register_response.id
 
         # 2. ЛОГИН
         login_data = {
             "email": register_data_pydantic.email,
             "password": register_data_pydantic.password
         }
-        response = api_manager.auth_api.login_user(login_data)
-
-        # Проверка структуры ответа
-        data = LoginUserResponse(**response.json())
+        login_response = api_manager.auth_api.login_user(login_data, pydantic=True)
 
         # Проверка значений
-        user = data.user
+        user = login_response.user
         assert user.email == register_data_pydantic.email, "email не совпадает"
         assert user.fullName == register_data_pydantic.fullName, "fullName не совпадает"
 
@@ -114,58 +103,28 @@ class TestNegativeAuth:
         if isinstance(all_users.json(), list):
             assert len(all_users.json()) == 1, "Создался дубликат пользователя"
 
-    @pytest.mark.parametrize("test_user_data, expected_error_message", [
-        (
-            TestUser(
-                email=faker.email(),
-                fullName=faker.name(),
-                password="Test1",
-                passwordRepeat="Test1",
-                roles=[Roles.USER]
-            ),
-            "Минимальная длина пароля 8 символов"
-        ),
-        (
-            TestUser(
-                email=faker.email(),
-                fullName=faker.name(),
-                password="Testtest!",
-                passwordRepeat="Testtest!",
-                roles=[Roles.USER]
-            ),
-            "Пароль должен содержать хотя бы одну цифру"
-        ),
-        (
-            TestUser(
-                email=faker.email(),
-                fullName=faker.name(),
-                password="test123!",
-                passwordRepeat="test123!",
-                roles=[Roles.USER]
-            ),
-                "Пароль должен содержать хотя бы одну заглавную букву"
-        ),
-        (
-            TestUser(
-                email=faker.email(),
-                fullName=faker.name(),
-                password="Test 123!",
-                passwordRepeat="Test 123!",
-                roles=[Roles.USER]
-            ),
-            "Пароль не должен содержать пробелов"
-        )
+    @pytest.mark.parametrize("password, password_repeat, expected_error", [
+        ("Test1", "Test1", "Минимальная длина пароля 8 символов"),
+        ("Testtest!", "Testtest!", "Пароль должен содержать хотя бы одну цифру"),
+        ("test123!", "test123!", "Пароль должен содержать хотя бы одну заглавную букву"),
+        ("Test 123!", "Test 123!", "Пароль не должен содержать пробелов"),
     ])
-    def test_register_invalid_password(self, api_manager, api_manager_admin, test_user_data, expected_error_message):
-        response = api_manager.auth_api.register_user(test_user_data, expected_status=400)
+    def test_register_invalid_password(self, api_manager, api_manager_admin, register_data_pydantic, password,
+                                       password_repeat, expected_error):
+        # Берем базовую модель и обновляем только пароли
+        test_user = register_data_pydantic.model_copy(update={
+            "password": password,
+            "passwordRepeat": password_repeat
+        })
+        response = api_manager.auth_api.register_user(test_user, expected_status=400)
 
         error_data = response.json()
         assert error_data.get("error") == "Bad Request"
         assert isinstance(error_data.get("message"), list)
-        assert expected_error_message in error_data["message"]
+        assert expected_error in error_data["message"]
 
         # Дополнительная проверка: пользователь НЕ создался
-        get_users = api_manager_admin.user_api.get_user_info(test_user_data.email)
+        get_users = api_manager_admin.user_api.get_user_info(test_user.email)
         if isinstance(get_users.json(), list):
             assert len(get_users.json()) == 0, "Пользователь создался с коротким паролем"
 
@@ -198,10 +157,7 @@ class TestNegativeAuth:
             "email": register_data_pydantic.email,
             "password": register_data_pydantic.password
         }
-        response = api_manager.auth_api.login_user(correct_login_data)
-
-        # Проверка структуры ответа
-        LoginUserResponse(**response.json())
+        api_manager.auth_api.login_user(correct_login_data, pydantic=True)
 
         # Меняем пароль
         wrong_login_data = {

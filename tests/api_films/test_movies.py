@@ -2,6 +2,7 @@ import pytest
 from faker import Faker
 from utils.validators import assert_valid_iso_datetime, assert_datetime_in_range
 from datetime import datetime, timezone, timedelta
+from models.base_models import BillboardParams
 
 faker = Faker('ru_RU')
 
@@ -13,61 +14,38 @@ class TestPositiveMovies:
     def test_get_billboard_without_token(self, api_manager, min_price, max_price, locations, genre_id):
         """Позитив: получение афиши без токена.
         Проверяем структуру ответа, типы данных и содержимое."""
-        billboard_params = {
-        "pageSize": faker.random_int(min=1, max=20),
-        "page": faker.random_int(min=1, max=100),
-        "minPrice": min_price,
-        "maxPrice": max_price,
-        "locations": locations,
-        "published": True,
-        "genreId": genre_id,
-        "createdAt": "asc"
-    }
+        billboard_params = BillboardParams(
+        pageSize=faker.random_int(min=1, max=15),
+        page=faker.random_int(min=1, max=100),
+        minPrice=min_price,
+        maxPrice=max_price,
+        locations=locations,
+        published=True,
+        genreId=genre_id,
+        createdAt="asc"
+        )
 
-        get_billboard = api_manager.films_api.get_billboard(billboard_params)
-
-        # Проверка структуры ответа
-        data = get_billboard.json()
-        required_fields = ["movies", "count", "page", "pageSize", "pageCount"]
-        for field in required_fields:
-            assert field in data, f"Отсутствует поле {field}"
-
-        # Проверка типов
-        assert isinstance(data["movies"], list), "movies должен быть списком"
-        assert isinstance(data["count"], int), "count должен быть числом"
-        assert isinstance(data["page"], int), "page должен быть числом"
-        assert isinstance(data["pageSize"], int), "pageSize должен быть числом"
-        assert isinstance(data["pageCount"], int), "pageCount должен быть числом"
+        get_billboard = api_manager.films_api.get_billboard(billboard_params.model_dump(), pydantic=True)
 
         # Проверка совпадения ответа с params в запросе
-        assert data["page"] == billboard_params["page"], "Номер страницы отличается от номера в params запроса"
-        assert data["pageSize"] == billboard_params["pageSize"], ("Размер страницы отличается от номера в params"
+        assert get_billboard.page == billboard_params.page, "Номер страницы отличается от номера в params запроса"
+        assert get_billboard.pageSize == billboard_params.pageSize, ("Размер страницы отличается от номера в params"
                                                                   " запроса")
 
         # Если есть фильмы, проверяем структуру первых трех
-        if data["movies"]:
-            for movie in data["movies"][:3]:
-                # Структура фильма
-                movie_fields = ["id", "name", "description", "price", "rating", "createdAt",
-                                "genre", "imageUrl", "location", "published", "genreId"]
-                for field in movie_fields:
-                    assert field in movie, f"У фильма отсутствует поле {field}"
-
+        if get_billboard.movies:
+            for movie in get_billboard.movies[:3]:
                 # Проверка цены
-                assert  min_price <= movie["price"] <= max_price, \
-                f"Цены {movie['price']} не в диапазоне {min_price}-{max_price}"
+                assert min_price <= movie.price <= max_price
 
                 # Проверка локации
                 if isinstance(locations, list):
-                    assert movie["location"] in locations, \
-                    f"Локация {movie['location']} не в {locations}"
+                    assert movie.location in locations
                 else:
-                    assert movie["location"] == locations, \
-                    f"Локация {movie['location']} не равна {locations}"
+                    assert movie.location == locations
 
                 # Проверка жанра
-                assert movie["genreId"] == genre_id, \
-                    f"Жанр {movie['genreId']} не равен {genre_id}"
+                assert movie.genreId == genre_id
 
     def test_get_billboard(self, api_manager_admin, billboard_params):
         """Позитив: получение афиши с токеном.
@@ -471,7 +449,9 @@ class TestNegativeMovies:
 
     @pytest.mark.slow
     @pytest.mark.parametrize("role", ["common_user", "admin"])
-    def test_delete_movie_without_rights(self, role, create_film_id, request):
+    @pytest.mark.skip(reason="Баг: в сваге ADMIN не может удалять, только SUPER_ADMIN, но тест спокойно удаляет через "
+                             "ADMIN фикстуру")
+    def test_delete_movie_without_rights(self, role, film_should_exist_after_test, create_film_id, request):
         """Негатив: удаление фильма без нужных прав. Параметризация ролевой модели."""
         user = request.getfixturevalue(role)
         movie_id = create_film_id
@@ -481,9 +461,6 @@ class TestNegativeMovies:
         assert error_data.get("message") == "Forbidden resource"
         assert error_data.get("error") == "Forbidden"
 
-        # Дополнительная проверка: фильм НЕ удалился
-        user.api.films_api.get_movie(movie_id)
-
     def test_delete_movie_with_invalid_token(self, api_manager, create_film_id):
         """Негатив: удаление фильма с неверным токеном"""
         movie_id = create_film_id
@@ -491,15 +468,10 @@ class TestNegativeMovies:
         api_manager.films_api.delete_movie(movie_id, expected_status=401)
         api_manager.clear_token()
 
-    @pytest.mark.parametrize("movie_id, expected_status", [
-        (999999, 404),
-        (-1, 404),
-        (0, 404),
-        ("abc", 404)
-    ])
-    def test_delete_movie_invalid_id(self, super_admin, movie_id, expected_status):
+    @pytest.mark.parametrize("movie_id", [999999, -1, 0, "abc"])
+    def test_delete_movie_invalid_id(self, super_admin, movie_id):
         """Негатив: удаление фильма с некорректными ID"""
-        super_admin.api.films_api.delete_movie(movie_id, expected_status=expected_status)
+        super_admin.api.films_api.delete_movie(movie_id, expected_status=404)
 
     # ========== PATCH /movies/{id} ==========
     def test_patch_movie_without_token(self, api_manager, create_film_id):

@@ -38,15 +38,14 @@ class CustomRequester:
         url = f"{self.base_url}{endpoint}"
 
         if isinstance(data, BaseModel):
-            data = json.loads(data.model_dump_json(exclude_unset=True))
-            # можно написать просто `data = data.model_dump()`, ведь у нас есть `use_enum_values = True` в конфиге
-            # нам не нужно сначала сериализовать в JSON и только после этого в словарь, можно сразу
+            data = json.loads(data.model_dump_json(exclude_unset=True)) # нужно, чтобы можно было передать модель сразу
+            # можно написать просто `data = data.model_dump()`
         response = self.session.request(method, url, json=data, params=params, headers=self.headers)
 
         if need_logging:
             self.log_request_and_response(response)
 
-        if response.status_code != expected_status and response.status_code not in expected_status:
+        if response.status_code != expected_status:
             raise ValueError(f"Unexpected status code: {response.status_code}. Expected: {expected_status}")
 
         if "Content-Type" in response.headers:

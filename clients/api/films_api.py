@@ -1,4 +1,7 @@
 from custom_requester.custom_requester import CustomRequester
+from typing import Union
+from requests import Response
+from models.base_models import BillboardResponse
 
 # - Класс наследуется от `CustomRequester`, получая доступ к методам (`send_request`).
 class FilmsAPI(CustomRequester):
@@ -16,20 +19,26 @@ class FilmsAPI(CustomRequester):
 
     # ========== методы для /movies ==========
 
-    def get_billboard(self, billboard_params, expected_status=200):
+    def get_billboard(self, billboard_params, expected_status=200, pydantic=False) -> Union[BillboardResponse, Response]:
         """
         Получение списка фильмов (афиши) с пагинацией и фильтрацией.
 
         :param billboard_params: Словарь с параметрами запроса (page, pageSize, minPrice, maxPrice, locations, published, genreId, createdAt).
         :param expected_status: Ожидаемый статус-код ответа.
+        :param pydantic: Решает обращать ли результат работы кастом реквестера в объект пайдентика.
         :return: Response объект requests.
         """
-        return self.send_request(
+        response = self.send_request(
             method="GET",
             endpoint=self.movies_endpoint,
             params=billboard_params,
             expected_status=expected_status
         )
+        response: Response = response
+        if pydantic:
+            return BillboardResponse(**response.json())
+        else:
+            return response
 
     def create_movie(self, film_data, expected_status=201):
         """

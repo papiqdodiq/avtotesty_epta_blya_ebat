@@ -8,10 +8,9 @@ class TestAuthAPI:
         """
         user_data = test_user_pydantic.model_dump() # делаем словарь, а не JSON объект!!!
         response = api_manager.auth_api.register_user(user_data)
-        response_data = RegisterUserResponse(**response.json())
 
         # Проверки
-        assert response_data.email == test_user_pydantic.email, "Email не совпадает"
+        assert response.email == test_user_pydantic.email, "Email не совпадает"
 
     # Сначала он ебанет регистрационный тест (setup) и только после логин тест,
     # ведь тест регистрации у нас зашит в фикстуре.

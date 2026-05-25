@@ -3,6 +3,13 @@ from typing import Optional, List
 import datetime
 from enum_constants.roles import Roles
 from utils.validators import assert_valid_uuid
+from typing import Union
+
+class BaseAPIModel(BaseModel):
+    """Базовый класс для всех API моделей с общей конфигурацией"""
+    class Config:
+        use_enum_values = True  # Преобразует Enum в значения при сериализации
+        from_attributes = True  # Позволяет создавать модели из ORM объектов (пригодится для БД)
 
 class TestUser(BaseModel):
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email пользователя")
@@ -14,6 +21,7 @@ class TestUser(BaseModel):
     banned: Optional[bool] = None
 
     @field_validator("passwordRepeat")
+    @classmethod
     def check_password_repeat(cls, value: str, info) -> str:
         # Проверяем, совпадение паролей
         if "password" in info.data and value != info.data["password"]:
@@ -30,17 +38,16 @@ class TestUser(BaseModel):
         }
         # json_encoders - ТОЛЬКО для model_dump_json() (устаревший механизм)
 
-class CreateUserData(BaseModel):
+# модели для test_user
+
+class CreateUserData(BaseAPIModel):
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email пользователя")
     fullName: str
     password: str
     verified: bool
     banned: bool
 
-    class Config:
-        use_enum_values = True
-
-class CreateUserResponse(BaseModel):
+class CreateUserResponse(BaseAPIModel):
     id: str
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email пользователя")
     fullName: str
@@ -66,10 +73,7 @@ class CreateUserResponse(BaseModel):
             raise ValueError("Некорректный формат даты и времени. Ожидается формат ISO 8601.")
         return value
 
-    class Config:
-        use_enum_values = True
-
-class PatchUserResponse(BaseModel):
+class PatchUserResponse(BaseAPIModel):
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email пользователя")
     fullName: str
     verified: bool
@@ -87,10 +91,9 @@ class PatchUserResponse(BaseModel):
             raise ValueError("Некорректный формат даты и времени. Ожидается формат ISO 8601.")
         return value
 
-    class Config:
-        use_enum_values = True
+# модели для test_auth
 
-class RegisterUserResponse(BaseModel):
+class RegisterUserResponse(BaseAPIModel):
     id: str
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email пользователя")
     fullName: str = Field(min_length=1, max_length=100, description="Полное имя пользователя")
@@ -116,11 +119,7 @@ class RegisterUserResponse(BaseModel):
             raise ValueError("Некорректный формат даты и времени. Ожидается формат ISO 8601.")
         return value
 
-    # Добавляем кастомный JSON-сериализатор для Enum (для корректного model_dump_json и model_dump)
-    class Config:
-        use_enum_values = True
-
-class UserInfo(BaseModel):
+class UserInfo(BaseAPIModel):
     """Модель для вложенного объекта user"""
     id: str
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email пользователя")
@@ -134,10 +133,7 @@ class UserInfo(BaseModel):
         assert_valid_uuid(value)
         return value
 
-    class Config:
-        use_enum_values = True
-
-class LoginUserResponse(BaseModel):
+class LoginUserResponse(BaseAPIModel):
     """Модель для полного ответа при логине"""
     user: UserInfo
     accessToken: str
@@ -162,6 +158,56 @@ class LoginUserResponse(BaseModel):
         assert value > 0, "expiresIn должен быть больше 0"
         return value
 
-    # Добавляем кастомный JSON-сериализатор для Enum (для корректного model_dump_json и model_dump)
-    class Config:
-        use_enum_values = True
+# модели для test_movies
+
+class BillboardParams(BaseAPIModel):
+    """Модель для параметров отображения страницы с афишей"""
+    """Модель для параметров запроса афиши"""
+    pageSize: int = Field(..., ge=1, le=20)
+    page: int = Field(..., ge=1)
+    minPrice: int = Field(..., ge=0)
+    maxPrice: int = Field(..., ge=0)
+    locations: Union[List[str], str]
+    published: bool
+    genreId: int
+    createdAt: str
+
+    @field_validator("minPrice", "maxPrice")
+    @classmethod
+    def validate_price_range(cls, value: int, info) -> int:
+        """Проверяет что minPrice не больше maxPrice"""
+        if "minPrice" in info.data and "maxPrice" in info.data:
+            if info.data["minPrice"] >= info.data["maxPrice"]:
+                raise ValueError("Минимальная цена не может быть больше или равна максимальной")
+        return value
+
+class FilmStructure(BaseAPIModel):
+    """Модель для проверки структуры фильма"""
+    id: int
+    name: str
+    description: str
+    price: int = Field(..., ge=0)
+    rating: int = Field(..., ge=0, le=10)
+    createdAt: str
+    genre: dict[str, str]
+    imageUrl: Optional[str] = None
+    location: str
+    published: bool
+    genreId: int
+
+    @field_validator("createdAt")
+    @classmethod
+    def validate_created_at(cls, value: str) -> str:
+        try:
+            datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            raise ValueError("Некорректный формат даты")
+        return value
+
+class BillboardResponse(BaseAPIModel):
+    """Модель для ответа афиши"""
+    movies: List[FilmStructure]  # ← Pydantic проверяет КАЖДЫЙ фильм в списке
+    count: int = Field(..., ge=0)
+    page: int = Field(..., ge=1)
+    pageSize: int = Field(..., ge=1, le=20)
+    pageCount: int = Field(..., ge=0)
