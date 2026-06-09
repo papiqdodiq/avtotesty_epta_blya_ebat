@@ -187,11 +187,11 @@ class FilmStructure(BaseAPIModel):
     name: str
     description: str
     price: int = Field(..., ge=0)
-    rating: int = Field(..., ge=0, le=10)
+    rating: float = Field(..., ge=0, le=10)
     createdAt: str
     genre: dict[str, str]
     imageUrl: Optional[str] = None
-    location: str
+    location: Union[List[str], str]
     published: bool
     genreId: int
 

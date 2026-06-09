@@ -15,8 +15,44 @@ from enum_constants.roles import Roles
 
 from models.base_models import TestUser, CreateUserData, CreateUserResponse
 
+from sqlalchemy.orm import Session
+from db_requester.db_client import get_db_session
+from db_requester.db_helpers import DBHelper
+
 faker_ru = Faker('ru_RU')
 faker_en = Faker('en_US')
+
+
+#фикстуры для работы с бд:
+
+@pytest.fixture(scope="module")
+def db_session() -> Session:
+    """
+    Фикстура, которая создает и возвращает сессию для работы с базой данных
+    После завершения теста сессия автоматически закрывается
+    """
+    db_session = get_db_session()
+    yield db_session
+    db_session.close()
+
+
+@pytest.fixture(scope="function")
+def db_helper(db_session) -> DBHelper:
+    db_helper = DBHelper(db_session)
+    return db_helper
+
+
+@pytest.fixture(scope="function")
+def created_test_user(db_helper): # способ добавления юзера не через запрос, а напрямую в бд
+    """
+    Фикстура, которая создает тестового пользователя в БД
+    и удаляет его после завершения теста
+    """
+    user = db_helper.create_test_user(DataGenerator.generate_user_data())
+    yield user
+    # Cleanup после теста
+    if db_helper.get_user_by_id(user.id):
+        db_helper.delete_user(user)
 
 
 #фикстуры для создании сессии юзера (ролевая модель, начало 5 модуля):
@@ -295,11 +331,9 @@ def create_user_pydantic(api_manager_admin, register_data_pydantic):
         banned=False
     )
 
-    response = api_manager_admin.user_api.create_user(user_data.model_dump())
+    response = api_manager_admin.user_api.create_user(user_data.model_dump(), pydantic=True)
 
-    data = CreateUserResponse(**response.json())
-
-    user_id = data.id
+    user_id = response.id
 
     yield {
         "id": user_id,
@@ -381,26 +415,19 @@ def create_user_data_pydantic(test_user_pydantic):
 
 
 @pytest.fixture(scope="function")
-def film_should_exist_after_test(create_film_id, api_manager_admin):
-    yield  # тест выполняется здесь
-    # После теста проверяем что фильм существует
-    api_manager_admin.films_api.get_movie(create_film_id)
-
-
-@pytest.fixture(scope="function")
-def create_film_with_review(api_manager_admin, create_film_response, review_data, get_user_id):
+def create_film_with_review(api_manager_admin, create_film, review_data, get_user_id):
     """
     Фикстура для создания фильма с одним отзывом.
     Аутентифицируется как админ, создаёт фильм, затем добавляет к нему отзыв.
 
     :param get_user_id: Получение идентификатора юзера из админского ApiManager.
     :param api_manager_admin: Экземпляр админского ApiManager.
-    :param create_film_response: Фикстура для создания фильма.
+    :param create_film: Фикстура для создания фильма.
     :param review_data: Данные для создания отзыва.
     :return: ID созданного фильма.
     """
 
-    movie_id = create_film_response.json()["id"]
+    movie_id = create_film.json()["id"]
 
     before_request = datetime.now(timezone.utc) - timedelta(seconds=5) # я так делаю, потому что серверное время
     # в один момент начинает от времени на моем ноуте, хз почему
@@ -431,18 +458,21 @@ def create_film_with_review(api_manager_admin, create_film_response, review_data
 
 
 @pytest.fixture(scope="function")  # переделано под ApiManager
-def create_film_response(api_manager_admin, film_data):
+def create_film(api_manager_admin, db_helper, film_data): # здесь сделал задание по sql alchemy
     """
     Фикстура для создания фильма и возврата его ID.
     Аутентифицируется как админ, создаёт фильм, возвращает ID, а после теста удаляет фильм.
 
     :param api_manager_admin: Экземпляр админского ApiManager.
     :param film_data: Данные для создания фильма.
+    :param db_helper: Фикстура с объектом хелпера.
     :return: ID созданного фильма.
     """
     before_request = datetime.now(timezone.utc) - timedelta(seconds=5) # я так делаю, потому что серверное время
     # в один момент начинает от времени на моем ноуте, хз почему
+    assert db_helper.get_movie_by_name(film_data["name"]) is None # ПЕРВАЯ ПРОВЕРКА С БД
     create_movie = api_manager_admin.films_api.create_movie(film_data)
+    assert db_helper.get_movie_by_name(film_data["name"])  # ВТОРАЯ ПРОВЕРКА С БД
     after_request = datetime.now(timezone.utc) + timedelta(seconds=10)
 
     create_data = create_movie.json()
@@ -471,26 +501,11 @@ def create_film_response(api_manager_admin, film_data):
     yield create_movie
 
     api_manager_admin.films_api.delete_movie(movie_id)
-
-
-@pytest.fixture(scope="function")  # переделано под ApiManager
-def create_film_id(api_manager_admin, create_film_response):
-    """
-    Фикстура для создания фильма и возврата его ID.
-    Аутентифицируется как админ, создаёт фильм, возвращает ID, а после теста удаляет фильм.
-
-    :param api_manager_admin: Экземпляр админского ApiManager.
-    :param create_film_response: Фикстура для создания фильма.
-    :return: ID созданного фильма.
-    """
-
-    movie_id = create_film_response.json()["id"]
-
-    yield movie_id
+    assert db_helper.get_movie_by_id(movie_id) is None # ТРЕТЬЯ ПРОВЕРКА С БД
 
 
 @pytest.fixture(scope="function")
-def create_genre_id(api_manager_admin, genre_data):
+def create_genre(api_manager_admin, genre_data):
     """
     Фикстура для создания жанра и возврата его ID.
     Аутентифицируется как админ, создаёт жанр, проверяет структуру ответа,
@@ -526,10 +541,10 @@ def genre_data():
     """
     Фикстура для генерации случайных данных для создания жанра.
 
-    :return: Словарь с ключом name (случайная строка + цифра).
+    :return: Словарь с ключом name.
     """
     return {
-        "name": faker_ru.sentence(nb_words=2) + "1"
+        "name": faker_ru.pystr(min_chars=3, max_chars=20)
     }
 
 
@@ -599,12 +614,12 @@ def valid_card_data():
 
 
 @pytest.fixture(scope="function")
-def create_payment_data(create_film_id, valid_card_data):
+def create_payment_data(create_film, valid_card_data):
     """Фикстура с данными для создания оплаты.
     Использует существующий фильм (create_film_id)."""
 
     return {
-        "movieId": create_film_id,
+        "movieId": create_film.json()["id"],
         "amount": faker_ru.random_int(min=1, max=10),
         "card": valid_card_data
     }

@@ -3,7 +3,6 @@ from constants import AUTH_URL
 from faker import Faker
 from models.base_models import CreateUserData
 
-
 faker_ru = Faker('ru_RU')  # для имён
 faker_en = Faker('en_US')  # для email
 
@@ -15,7 +14,8 @@ class TestUserPositive:
         Проверяем статус, заголовки, структуру ответа и типы данных."""
 
         # БАГ!!! В регулярном выражении ПАРОЛЯ отсутствует символ "!" хотя в документации он указан:
-        # password must match /^(?=.*[a-zA-Zа-яА-Я])(?=.*\\d)[a-zA-Zа-яА-Я\\d?@#$%^&*_\\-+()\\[\\]{}><\\\\/\\\\|\"'.,:;]{8,20}$/ regular expression
+        # password must match /^(?=.*[a-zA-Zа-яА-Я])(?=.*\\d)[a-zA-Zа-яА-Я\\d?@#$%^&*_\\-+()\\[\\]{}><\\\\/\\\\|\"'.,:;]
+        # {8,20}$/ regular expression
         # Если пароль нагенерирует пароль с символом "!", то тест упадет.
 
         user_data = CreateUserData(

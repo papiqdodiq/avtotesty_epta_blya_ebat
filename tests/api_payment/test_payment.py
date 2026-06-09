@@ -6,6 +6,7 @@ from faker import Faker
 faker_ru = Faker('ru_RU')
 faker_en = Faker('en_US')
 
+
 class TestPositivePayment:
 
     def test_create_payment_success(self, auth_session, create_payment_data):
@@ -23,7 +24,7 @@ class TestPositivePayment:
         assert "status" in data, "У ответа отсутствует поле status"
         assert data["status"] == "SUCCESS", f"Статус должен быть SUCCESS, получено {data['status']}"
 
-    def test_get_user_payments_success(self, auth_session, create_user, create_film_id, valid_card_data):
+    def test_get_user_payments_success(self, auth_session, create_user, create_film, valid_card_data):
         """Позитив: ADMIN/SUPER_ADMIN получает платежи ДРУГОГО пользователя.
         Сначала создаём оплату для обычного пользователя, потом ADMIN смотрит его платежи."""
 
@@ -44,7 +45,7 @@ class TestPositivePayment:
 
         # 2. Обычный пользователь создаёт оплату
         payment_data = {
-            "movieId": create_film_id,
+            "movieId": create_film.json()["id"],
             "amount": faker_ru.random_int(min=1, max=5),
             "card": valid_card_data
         }
@@ -71,12 +72,12 @@ class TestPositivePayment:
         # Проверяем, что созданная оплата есть в списке
         found = False
         for payment in payments:
-            if payment.get("movieId") == create_film_id:
+            if payment.get("movieId") == create_film.json()["id"]:
                 found = True
                 break
         assert found, "Созданная оплата не найдена в списке платежей пользователя"
 
-    def test_get_my_payments_success(self, auth_session, create_film_id, valid_card_data):
+    def test_get_my_payments_success(self, auth_session, create_film, valid_card_data):
         """Позитив: USER получает свои платежи.
         Сначала создаём оплату, потом получаем свои платежи."""
 
@@ -87,7 +88,7 @@ class TestPositivePayment:
 
         # 2. Создаём оплату
         payment_data = {
-            "movieId": create_film_id,
+            "movieId": create_film.json()["id"],
             "amount": faker_ru.random_int(min=1, max=5),
             "card": valid_card_data
         }
@@ -113,7 +114,7 @@ class TestPositivePayment:
         # Проверяем, что созданная оплата есть в списке
         found = False
         for payment in payments:
-            if payment.get("movieId") == create_film_id:
+            if payment.get("movieId") == create_film.json()["id"]:
                 found = True
                 break
         assert found, "Созданная оплата не найдена в списке платежей"
@@ -215,11 +216,11 @@ class TestNegativePayment:
         response = auth_session.post(f"{PAYMENT_URL}/create", json=payment_data)
         assert response.status_code == 404, "Оплата несуществующего фильма не вызвала ошибку"
 
-    def test_create_payment_invalid_card(self, auth_session, create_film_id):
+    def test_create_payment_invalid_card(self, auth_session, create_film):
         """Негатив: оплата с неверным номером карты"""
 
         payment_data = {
-            "movieId": create_film_id,
+            "movieId": create_film.json()["id"],
             "amount": 1,
             "card": {
                 "cardNumber": "0000000000000000",

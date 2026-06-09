@@ -4,6 +4,8 @@
 .DS_Store
 /venv/
 module_5/
+allure-report/
+allure-results/
 __pycache__/
 *.db
 *.xlsx
