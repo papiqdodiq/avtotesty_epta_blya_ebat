@@ -13,7 +13,7 @@ from resources.user_creds import SuperAdminCreds, AdminCreds
 from entities.user import User
 from enum_constants.roles import Roles
 
-from models.base_models import TestUser, CreateUserData, CreateUserResponse
+from models.base_models import TestUser, CreateUserData
 
 from sqlalchemy.orm import Session
 from db_requester.db_client import get_db_session

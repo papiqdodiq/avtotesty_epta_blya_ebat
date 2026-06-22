@@ -161,7 +161,7 @@ class TestPositiveMovies:
     @pytest.mark.smoke
     @pytest.mark.regression
     @pytest.mark.api
-    def test_create_movie(self, api_manager, create_film, film_data): # в фикстуре юзал бд проверки через sql alchemy
+    def test_create_movie(self, api_manager, create_film, film_data, db_helper): # в фикстуре юзал бд проверки через sql alchemy
         """Позитив: создание фильма."""
         with allure.step("Создаём фильм через фикстуру"):
             create_data = create_film.json()
@@ -175,16 +175,16 @@ class TestPositiveMovies:
             assert create_data["genreId"] == film_data["genreId"]
 
         with allure.step("Получаем фильм по ID и проверяем данные в БД"):
-            get_movie = api_manager.films_api.get_movie(movie_id)
-            get_data = get_movie.json()
+            get_movie = db_helper.get_movie_by_id(movie_id)
+            get_data = get_movie.to_dict()
             assert get_data["id"] == movie_id
             assert get_data["name"] == film_data["name"]
             assert get_data["price"] == film_data["price"]
             assert get_data["location"] == film_data["location"]
             assert get_data["published"] == film_data["published"]
-            assert get_data["genreId"] == film_data["genreId"]
+            assert get_data["genre_id"] == film_data["genreId"]
             assert get_data["description"] == film_data["description"]
-            assert get_data["imageUrl"] == film_data["imageUrl"]
+            assert get_data["image_url"] == film_data["imageUrl"]
 
     @allure.story("Создание фильма")
     @allure.title("Создание фильма с обновлёнными параметрами")

@@ -3,6 +3,9 @@
 .venv/
 .DS_Store
 /venv/
+module_1_2/
+module_3/
+module_4/
 module_5/
 allure-report/
 allure-results/

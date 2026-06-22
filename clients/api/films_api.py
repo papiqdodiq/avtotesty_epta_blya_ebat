@@ -13,9 +13,9 @@ class FilmsAPI(CustomRequester):
     def __init__(self, session):
         super().__init__(session=session, base_url="https://api.dev-cinescope.coconutqa.ru/")
         # - При инициализации получает сессию и базовый URL API.
-        self.movies_endpoint = "/movies"
-        self.reviews_endpoint = "/reviews"
-        self.genres_endpoint = "/genres"
+        self.movies_endpoint = "movies"
+        self.reviews_endpoint = "reviews"
+        self.genres_endpoint = "genres"
 
     # ========== методы для /movies ==========
 

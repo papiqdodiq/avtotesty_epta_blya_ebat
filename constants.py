@@ -17,8 +17,8 @@ HEADERS = {
     "Accept": "*/*"
 }
 
-LOGIN_ENDPOINT = "/login"
-REGISTER_ENDPOINT = "/register"
+LOGIN_ENDPOINT = "login"
+REGISTER_ENDPOINT = "register"
 
 login_data_list = ["api1@gmail.com", "asdqwe123Q"] # общая константа для случаев, когда нужно залогиниться как админ,
 # использовал везде в api_films
