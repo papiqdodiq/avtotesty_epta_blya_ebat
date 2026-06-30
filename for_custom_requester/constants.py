@@ -4,5 +4,5 @@ HEADERS = {
     "Accept": "application/json"
 }
 
-LOGIN_ENDPOINT = "/login"
-REGISTER_ENDPOINT = "/register"
+LOGIN_ENDPOINT = "login"
+REGISTER_ENDPOINT = "register"

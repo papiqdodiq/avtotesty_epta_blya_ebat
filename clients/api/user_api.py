@@ -26,7 +26,7 @@ class UserAPI(CustomRequester):
         """
         return self.send_request(
             method="GET",
-            endpoint=f"/user/{user_id}",
+            endpoint=f"user/{user_id}",
             expected_status=expected_status
         )
 
@@ -46,7 +46,7 @@ class UserAPI(CustomRequester):
     def patch_user(self, user_id, user_data, expected_status=200, pydantic=False) -> Union[PatchUserResponse, Response]:
         response = self.send_request(
             method="PATCH",
-            endpoint=f"/user/{user_id}",
+            endpoint=f"user/{user_id}",
             data=user_data,
             expected_status=expected_status
         )
@@ -66,7 +66,7 @@ class UserAPI(CustomRequester):
         """
         return self.send_request(
             method="DELETE",
-            endpoint=f"/user/{user_id}",
+            endpoint=f"user/{user_id}",
             expected_status=expected_status
         )
 

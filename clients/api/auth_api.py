@@ -46,7 +46,7 @@ class AuthAPI(CustomRequester):
         else:
             return response
 
-    def login_user(self, login_data, expected_status=200, pydantic=False) -> Union[LoginUserResponse, Response]:
+    def login_user(self, login_data, expected_status=201, pydantic=False) -> Union[LoginUserResponse, Response]:
         """
         Авторизация пользователя.
 

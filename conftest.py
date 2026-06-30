@@ -1,6 +1,7 @@
 import pytest
 import requests
 from faker import Faker
+from xdist.newhooks import pytest_xdist_auto_num_workers
 
 from constants import HEADERS, LOGIN_DATA, login_data_list, AUTH_URL, MOVIES_URL, CURRENT_USER_ID, REGISTER_ENDPOINT
 from custom_requester.custom_requester import CustomRequester
@@ -19,8 +20,54 @@ from sqlalchemy.orm import Session
 from db_requester.db_client import get_db_session
 from db_requester.db_helpers import DBHelper
 
+from module_6.two_rx_codegen_trace_otladka.example2_trace import Tools
+from module_7.page_object.page_object_models import CinescopeCommentPage
+
 faker_ru = Faker('ru_RU')
 faker_en = Faker('en_US')
+
+
+#фикстуры для ui:
+
+@pytest.fixture(scope="function")
+def logged_page(page, create_user, register_data):
+    # Создаем объект страницы регистрации Cinescope
+    login_page = CinescopeCommentPage(page)
+
+    # Открываем страницу
+    login_page.open_login_page()
+
+    # Осуществяем вход
+    login_page.login(register_data["email"], register_data["password"])
+    login_page.assert_was_redirect_to_home_page()
+
+    return login_page
+
+DEFAULT_UI_TIMEOUT = 30000  # Пример значения таймаута
+
+@pytest.fixture(scope="session")  # Браузер запускается один раз для всей сессии
+def browser(playwright):
+    browser = playwright.chromium.launch(
+        headless=False)  # headless=True для CI/CD, headless=False для локальной разработки
+    yield browser  # yield возвращает значение фикстуры, выполнение теста продолжится после yield
+    browser.close()  # Браузер закрывается после завершения всех тестов
+
+@pytest.fixture(scope="function")  # Контекст создается для каждого теста
+def context(browser):
+    context = browser.new_context()
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)  # Трассировка для отладки
+    context.set_default_timeout(DEFAULT_UI_TIMEOUT)  # Установка таймаута по умолчанию
+    yield context  # yield возвращает значение фикстуры, выполнение теста продолжится после yield
+    log_name = f"trace_{Tools.get_timestamp()}.zip"  # Продолжение трассировки
+    trace_path = Tools.files_dir('playwright_trace', log_name)
+    context.tracing.stop(path=trace_path)
+    context.close()  # Контекст закрывается после завершения теста
+
+@pytest.fixture(scope="function")  # Страница создается для каждого теста
+def page(context):
+    page = context.new_page()
+    yield page  # yield возвращает значение фикстуры, выполнение теста продолжится после yield
+    page.close()  # Страница закрывается после завершения теста
 
 
 #фикстуры для работы с бд:
@@ -195,7 +242,7 @@ def admin_session():
         "password": login_data_list[1]
     }
     response = session.post(f"{AUTH_URL}/login", json=login_data)
-    assert response.status_code == 200
+    assert response.status_code == 201
     token = response.json().get("accessToken")
     assert token is not None
 
@@ -239,7 +286,7 @@ def auth_session():
     session.headers.update(HEADERS)
 
     response = requests.post(f"{AUTH_URL}/login", headers=HEADERS, json=LOGIN_DATA)
-    assert response.status_code == 200, "Ошибка авторизации"
+    assert response.status_code == 201, "Ошибка авторизации"
     token = response.json().get("accessToken")
     assert token is not None, "В ответе не оказалось токена"
 
@@ -362,7 +409,7 @@ def register_data(): # для негативных тестов
         "fullName": full_name,
         "password": password,
         "passwordRepeat": password,
-        "roles": [Roles.USER.value]
+        #"roles": [Roles.USER.value]
     }
 
     return data
@@ -383,7 +430,6 @@ def register_data_pydantic() -> TestUser:
         fullName=random_name,
         password=random_password,
         passwordRepeat=random_password,
-        roles=[Roles.USER]
     )
 
 

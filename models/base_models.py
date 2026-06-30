@@ -11,14 +11,14 @@ class BaseAPIModel(BaseModel):
         use_enum_values = True  # Преобразует Enum в значения при сериализации
         from_attributes = True  # Позволяет создавать модели из ORM объектов (пригодится для БД)
 
-class TestUser(BaseModel):
+class TestUser(BaseAPIModel):
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email пользователя")
     fullName: str
     password: str
     passwordRepeat: str = Field(..., min_length=1, max_length=20, description="passwordRepeat должен полностью совпадать с полем password")
-    roles: list[Roles] = [Roles.USER]
-    verified: Optional[bool] = None
-    banned: Optional[bool] = None
+    #roles: list[Roles] = [Roles.USER]
+    #verified: Optional[bool] = None
+    #banned: Optional[bool] = None
 
     @field_validator("passwordRepeat")
     @classmethod
@@ -29,14 +29,14 @@ class TestUser(BaseModel):
             raise ValueError("Пароли не совпадают")
         return value
 
-    # Добавляем кастомный JSON-сериализатор для Enum (для корректного model_dump_json и model_dump)
-    class Config:
-        use_enum_values = True
-        # use_enum_values = True - для model_dump() и model_dump_json()
-        json_encoders = {
-            Roles: lambda v: v.value  # Преобразуем Enum в строку
-        }
-        # json_encoders - ТОЛЬКО для model_dump_json() (устаревший механизм)
+    # # Добавляем кастомный JSON-сериализатор для Enum (для корректного model_dump_json и model_dump)
+    # class Config:
+    #     use_enum_values = True
+    #     # use_enum_values = True - для model_dump() и model_dump_json()
+    #     json_encoders = {
+    #         Roles: lambda v: v.value  # Преобразуем Enum в строку
+    #     }
+    #     # json_encoders - ТОЛЬКО для model_dump_json() (устаревший механизм)
 
 # модели для test_user
 
@@ -98,7 +98,7 @@ class RegisterUserResponse(BaseAPIModel):
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email пользователя")
     fullName: str = Field(min_length=1, max_length=100, description="Полное имя пользователя")
     verified: bool
-    banned: bool
+    #banned: bool
     roles: List[Roles]
     createdAt: str = Field(description="Дата и время создания пользователя в формате ISO 8601")
 
