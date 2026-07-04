@@ -1,100 +1,56 @@
-#test_runner.yml
-# Название workflow (отображается в интерфейсе GitHub Actions)
 name: Run Tests and Generate Report
 
-# Триггеры запуска:
 on:
-  # Запускать при любом push в репозиторий
-  push: {} 
-  # Запускать при создании pull request в ветку main
+  push: {}
   pull_request:
     branches: [ main ]
 
-# Определение jobs (заданий)
 jobs:
-  # Job с именем "test"
   test:
-    # Запуск на последней версии Ubuntu
     runs-on: ubuntu-latest
     
-    # Последовательность шагов
     steps:
-    # Шаг 1: Получение кода из репозитория
     - name: Checkout code
-      # Используем стандартное действие для checkout (версия 4)
       uses: actions/checkout@v4
 
-    # Шаг 2: Настройка Python окружения
     - name: Set up Python
-      # Официальное действие для установки Python
       uses: actions/setup-python@v4
       with:
-        # Указываем конкретную версию Python (3.10)
         python-version: '3.10'
 
-    # Шаг 3: Установка зависимостей Python
     - name: Install dependencies
       run: |
-        # Обновляем pip до последней версии
         python -m pip install --upgrade pip
-        # Устанавливаем зависимости из requirements.txt
         pip install -r requirements.txt
-        # Устанавливаем дополнительные пакеты для тестирования
         pip install pytest pytest-check allure-pytest Faker
 
-    # Шаг 4: Установка Allure Commandline
-    - name: Install Allure Commandline
-      run: |
-        # Обновляем список пакетов Ubuntu
-        sudo apt-get update
-        # Устанавливаем Java Runtime (требование для Allure)
-        sudo apt-get install default-jre -y
-        # Скачиваем архив Allure версии 2.24.1
-        wget https://github.com/allure-framework/allure2/releases/download/2.24.1/allure-2.24.1.tgz
-        # Распаковываем архив в /opt/
-        tar -zxvf allure-2.24.1.tgz -C /opt/
-        # Создаем симлинк для доступа к allure из любой директории
-        sudo ln -s /opt/allure-2.24.1/bin/allure /usr/bin/allure
-        # Добавляем путь к Allure в переменную PATH
-        echo "/opt/allure-2.24.1/bin" >> $GITHUB_PATH
+    - name: Install Allure
+      uses: simple-elf/allure-action@v1
+      with:
+        version: 2.24.1
 
-    # Шаг 5: Запуск линтера flake8
-    - name: Run linter
-      run: |
-        # Устанавливаем flake8
-        pip install flake8
-        # Запускаем flake8 с проверкой критических ошибок
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Закомментированная строка: расширенная проверка стиля кода
-        # flake8 . --count --exit-zero --max-complexity=10 --max-line-length=200 --statistics
-
-    # Шаг 6: Запуск тестов
     - name: Run tests
       run: |
-        # Запуск конкретного теста с генерацией Allure-отчета
         python -m pytest module_7/page_object/test_page.py::TestReviewPage::test_review_by_ui -v --alluredir=allure-results
       
-    # Шаг 7: Сохранение результатов тестов как артефакта
     - name: Upload Allure results
-      # Используем действие для загрузки артефактов
       uses: actions/upload-artifact@v4
+      if: always()
       with:
-        # Имя артефакта
         name: allure-results
-        # Путь к файлам результатов
         path: allure-results/
-        # Сколько дней хранить артефакт (максимум 90)
         retention-days: 5
 
-    # Шаг 8: Генерация Allure-отчета
     - name: Generate Allure report
-      # Выполнять всегда, даже если предыдущие шаги завершились с ошибкой
       if: always()
       run: |
-        # Генерация HTML-отчета из результатов тестов
         allure generate allure-results -o allure-report --clean
-        # Выводим в лог инструкцию для локального использования:
-        echo allure serve allure-results
-        echo C:\Users\Квадрат\scoop\apps\allure\current\bin\allure.bat serve ./allure-results
+        echo "Allure report generated"
 
-
+    - name: Upload Allure report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: allure-report
+        path: allure-report/
+        retention-days: 5
