@@ -33,6 +33,18 @@ jobs:
         sudo ln -s /opt/allure-2.29.0/bin/allure /usr/local/bin/allure
         allure --version
 
+    - name: Create .env file
+      run: |
+        echo "SUPER_ADMIN_USERNAME=${{ secrets.SUPER_ADMIN_USERNAME }}" >> .env
+        echo "SUPER_ADMIN_PASSWORD=${{ secrets.SUPER_ADMIN_PASSWORD }}" >> .env
+        echo "ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME }}" >> .env
+        echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}" >> .env
+        echo "DBNAME=${{ secrets.DBNAME }}" >> .env
+        echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+        echo "PASSWORD=${{ secrets.PASSWORD }}" >> .env
+        echo "HOST=${{ secrets.HOST }}" >> .env
+        echo "PORT=${{ secrets.PORT }}" >> .env
+
     - name: Run tests
       run: |
         python -m pytest module_7/page_object/test_page.py::TestReviewPage::test_review_by_ui -v --alluredir=allure-results
@@ -52,8 +64,8 @@ jobs:
         echo "Allure report generated"
 
     - name: Upload Allure report
-      if: always()
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: allure-report
         path: allure-report/
